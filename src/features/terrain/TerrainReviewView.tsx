@@ -12,6 +12,7 @@ interface TerrainReviewViewProps {
   onProceed: () => void;
   viewerMode: 'light' | 'technical';
   setViewerMode: (mode: 'light' | 'technical') => void;
+  hideLocalLayerControls?: boolean;
 }
 
 export function TerrainReviewView({
@@ -20,7 +21,8 @@ export function TerrainReviewView({
   qaResult,
   onProceed,
   viewerMode,
-  setViewerMode
+  setViewerMode,
+  hideLocalLayerControls = false
 }: TerrainReviewViewProps) {
   const [showPoints, setShowPoints] = useState(true);
 
@@ -29,27 +31,31 @@ export function TerrainReviewView({
       {/* Viewer controls bar */}
       <div className="h-11 border-b border-[#E2E8F0] bg-white px-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4 text-[13px] font-sans">
-          <span className="text-[#64748B] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono text-[12px]">
-            <Layers size={14} className="text-[#0891B2]" />
-            Capas Activas:
-          </span>
-          <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showPoints}
-              onChange={(e) => setShowPoints(e.target.checked)}
-              className="accent-[#0891B2] rounded"
-            />
-            Nube Puntos
-          </label>
-          <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed" title="Superficie no generada todavía">
-            <input type="checkbox" disabled className="rounded" />
-            Superficie Grid (Bloqueado)
-          </label>
-          <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed" title="Curvas no generadas todavía">
-            <input type="checkbox" disabled className="rounded" />
-            Curvas Nivel (Bloqueado)
-          </label>
+          {!hideLocalLayerControls && (
+            <>
+              <span className="text-[#64748B] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono text-[12px]">
+                <Layers size={14} className="text-[#0891B2]" />
+                Capas Activas:
+              </span>
+              <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPoints}
+                  onChange={(e) => setShowPoints(e.target.checked)}
+                  className="accent-[#0891B2] rounded"
+                />
+                Nube Puntos
+              </label>
+              <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed" title="Superficie no generada todavía">
+                <input type="checkbox" disabled className="rounded" />
+                Superficie Grid (Bloqueado)
+              </label>
+              <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed" title="Curvas no generadas todavía">
+                <input type="checkbox" disabled className="rounded" />
+                Curvas Nivel (Bloqueado)
+              </label>
+            </>
+          )}
         </div>
         
         <div className="flex items-center gap-2">

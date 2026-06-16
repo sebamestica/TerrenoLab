@@ -20,6 +20,7 @@ interface SurfaceViewProps {
   setShowGrid: (val: boolean) => void;
   viewerMode: 'light' | 'technical';
   setViewerMode: (mode: 'light' | 'technical') => void;
+  hideLocalLayerControls?: boolean;
 }
 
 export function SurfaceView({
@@ -36,6 +37,7 @@ export function SurfaceView({
   setShowGrid,
   viewerMode,
   setViewerMode,
+  hideLocalLayerControls = false,
 }: SurfaceViewProps) {
   
   // Render floating warning or blocker banners on top of the raster canvas
@@ -146,34 +148,38 @@ export function SurfaceView({
       {/* Viewer controls bar */}
       <div className="h-11 border-b border-[#E2E8F0] bg-white px-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4 text-[13px] font-sans">
-          <span className="text-[#64748B] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono text-[12px]">
-            <Layers size={14} className="text-[#0891B2]" />
-            Capas Activas:
-          </span>
-          <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showPoints}
-              onChange={(e) => setShowPoints(e.target.checked)}
-              disabled={isProcessing || !surface}
-              className="accent-[#0891B2] rounded disabled:opacity-50"
-            />
-            Nube Puntos
-          </label>
-          <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showGrid}
-              onChange={(e) => setShowGrid(e.target.checked)}
-              disabled={isProcessing || !surface}
-              className="accent-[#0891B2] rounded disabled:opacity-50"
-            />
-            Superficie Heatmap ({surface ? `${surface.resolution}x${surface.resolution}` : '---'})
-          </label>
-          <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed" title="Curvas no generadas todavía">
-            <input type="checkbox" disabled className="rounded" />
-            Curvas Nivel (No generadas)
-          </label>
+          {!hideLocalLayerControls && (
+            <>
+              <span className="text-[#64748B] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono text-[12px]">
+                <Layers size={14} className="text-[#0891B2]" />
+                Capas Activas:
+              </span>
+              <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPoints}
+                  onChange={(e) => setShowPoints(e.target.checked)}
+                  disabled={isProcessing || !surface}
+                  className="accent-[#0891B2] rounded disabled:opacity-50"
+                />
+                Nube Puntos
+              </label>
+              <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showGrid}
+                  onChange={(e) => setShowGrid(e.target.checked)}
+                  disabled={isProcessing || !surface}
+                  className="accent-[#0891B2] rounded disabled:opacity-50"
+                />
+                Superficie Heatmap ({surface ? `${surface.resolution}x${surface.resolution}` : '---'})
+              </label>
+              <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed" title="Curvas no generadas todavía">
+                <input type="checkbox" disabled className="rounded" />
+                Curvas Nivel (No generadas)
+              </label>
+            </>
+          )}
         </div>
         
         <div className="flex items-center gap-2">

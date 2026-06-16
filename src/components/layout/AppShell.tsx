@@ -141,11 +141,7 @@ export function AppShell({
         />
 
         {/* Center: Main Working Canvas & Form Views */}
-        <main className={`flex-1 flex flex-col min-w-0 bg-[#FFFFFF] relative ${
-          (currentState !== 'EMPTY' && currentState !== 'FILE_SELECTED' && currentState !== 'VALIDATED' && currentState !== 'ERROR')
-            ? 'has-global-layers'
-            : ''
-        }`}>
+        <main className="flex-1 flex flex-col min-w-0 bg-[#FFFFFF] relative">
           {/* Global Layers Bar */}
           {currentState !== 'EMPTY' && currentState !== 'FILE_SELECTED' && currentState !== 'VALIDATED' && currentState !== 'ERROR' && (
             <div className="h-11 border-b border-[#E2E8F0] bg-white px-4 flex items-center justify-between shrink-0 select-none z-10 global-layers-bar font-sans">
@@ -204,30 +200,14 @@ export function AppShell({
               </div>
             </div>
           )}
-          {children}
-
-          <style>{`
-            main.has-global-layers > div.flex-col {
-              padding-top: 2.75rem !important;
-              position: relative !important;
+          {React.Children.map(children, (child) => {
+            if (React.isValidElement(child)) {
+              return React.cloneElement(child as React.ReactElement<any>, {
+                hideLocalLayerControls: true,
+              });
             }
-            main.has-global-layers > div.flex-col > div.h-11.border-b {
-              position: absolute !important;
-              top: 0 !important;
-              left: 0 !important;
-              right: 0 !important;
-              background: transparent !important;
-              border-bottom: none !important;
-              pointer-events: none !important;
-              z-index: 20 !important;
-            }
-            main.has-global-layers > div.flex-col > div.h-11.border-b > * {
-              pointer-events: auto !important;
-            }
-            main.has-global-layers > div.flex-col > div.h-11.border-b > div.flex.items-center.gap-4 {
-              display: none !important;
-            }
-          `}</style>
+            return child;
+          })}
         </main>
 
         {/* Right Side: Data Inspector */}

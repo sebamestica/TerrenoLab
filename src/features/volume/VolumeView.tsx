@@ -25,6 +25,7 @@ interface VolumeViewProps {
   volumeAudit?: VolumeAuditResult | null;
   onProceed: () => void;
   onReset: () => void;
+  hideLocalLayerControls?: boolean;
 }
 
 export function VolumeView({
@@ -42,6 +43,7 @@ export function VolumeView({
   volumeAudit,
   onProceed,
   onReset,
+  hideLocalLayerControls = false,
 }: VolumeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
