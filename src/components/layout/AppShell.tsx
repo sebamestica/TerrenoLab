@@ -1,4 +1,5 @@
 import React from 'react';
+import { Layers } from 'lucide-react';
 import { Topbar } from './Topbar';
 import { WorkflowSidebar } from './WorkflowSidebar';
 import { InspectorPanel } from './InspectorPanel';
@@ -140,8 +141,93 @@ export function AppShell({
         />
 
         {/* Center: Main Working Canvas & Form Views */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#FFFFFF] relative">
+        <main className={`flex-1 flex flex-col min-w-0 bg-[#FFFFFF] relative ${
+          (currentState !== 'EMPTY' && currentState !== 'FILE_SELECTED' && currentState !== 'VALIDATED' && currentState !== 'ERROR')
+            ? 'has-global-layers'
+            : ''
+        }`}>
+          {/* Global Layers Bar */}
+          {currentState !== 'EMPTY' && currentState !== 'FILE_SELECTED' && currentState !== 'VALIDATED' && currentState !== 'ERROR' && (
+            <div className="h-11 border-b border-[#E2E8F0] bg-white px-4 flex items-center justify-between shrink-0 select-none z-10 global-layers-bar font-sans">
+              <div className="flex items-center gap-4 text-[13px]">
+                <span className="text-[#64748B] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono text-[12px]">
+                  <Layers size={14} className="text-[#0891B2]" />
+                  Capas Activas:
+                </span>
+                
+                {/* Nube de puntos */}
+                <label className="flex items-center gap-1.5 cursor-pointer text-[#0F172A] font-medium">
+                  <input
+                    type="checkbox"
+                    checked={!!showPoints}
+                    onChange={(e) => setShowPoints?.(e.target.checked)}
+                    className="accent-[#0891B2] rounded cursor-pointer"
+                  />
+                  Nube de puntos
+                </label>
+
+                {/* Superficie IDW */}
+                {surface !== null ? (
+                  <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer font-medium">
+                    <input
+                      type="checkbox"
+                      checked={!!showGrid}
+                      onChange={(e) => setShowGrid?.(e.target.checked)}
+                      className="accent-[#0891B2] rounded cursor-pointer"
+                    />
+                    Superficie IDW
+                  </label>
+                ) : (
+                  <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed font-medium" title="Superficie IDW no generada">
+                    <input type="checkbox" disabled className="rounded opacity-50 cursor-not-allowed" />
+                    Superficie IDW no generada
+                  </label>
+                )}
+
+                {/* Curvas de nivel */}
+                {contours !== null ? (
+                  <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer font-medium">
+                    <input
+                      type="checkbox"
+                      checked={!!showContours}
+                      onChange={(e) => setShowContours?.(e.target.checked)}
+                      className="accent-[#0891B2] rounded cursor-pointer"
+                    />
+                    Curvas de nivel
+                  </label>
+                ) : (
+                  <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed font-medium" title="Curvas no generadas">
+                    <input type="checkbox" disabled className="rounded opacity-50 cursor-not-allowed" />
+                    Curvas no generadas
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
           {children}
+
+          <style>{`
+            main.has-global-layers > div.flex-col {
+              padding-top: 2.75rem !important;
+              position: relative !important;
+            }
+            main.has-global-layers > div.flex-col > div.h-11.border-b {
+              position: absolute !important;
+              top: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              background: transparent !important;
+              border-bottom: none !important;
+              pointer-events: none !important;
+              z-index: 20 !important;
+            }
+            main.has-global-layers > div.flex-col > div.h-11.border-b > * {
+              pointer-events: auto !important;
+            }
+            main.has-global-layers > div.flex-col > div.h-11.border-b > div.flex.items-center.gap-4 {
+              display: none !important;
+            }
+          `}</style>
         </main>
 
         {/* Right Side: Data Inspector */}

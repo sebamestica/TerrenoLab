@@ -13,6 +13,8 @@ import { VolumeOptions, VolumeResult } from '../../domain/terrain/volume';
 import { VolumeQAResult } from '../../domain/terrain/volumeQA';
 import { VolumeAuditResult } from '../../domain/terrain/volumeAudit';
 import { Badge } from '../ui/Badge';
+import { InspectorViewHeader } from '../inspector/InspectorViewHeader';
+import { InspectorStatus } from '../inspector/InspectorStatusBadge';
 
 interface InspectorPanelProps {
   currentState: WorkflowState;
@@ -121,7 +123,117 @@ export function InspectorPanel({
   volumeQA = null,
   volumeAudit = null,
 }: InspectorPanelProps) {
-  
+  const getTerrainReviewStatus = (): InspectorStatus => {
+    if (!qaResult) return 'Bloqueado';
+    if (qaResult.quality.blockers.length > 0 || !qaResult.quality.canInterpolate) {
+      return 'Bloqueado';
+    }
+    if (qaResult.quality.warnings.length > 0 || qaResult.quality.label === 'Baja' || qaResult.quality.label === 'Regular') {
+      return 'Requiere revisión';
+    }
+    return 'Apto para interpolación';
+  };
+
+  const getSurfaceStatus = (): InspectorStatus => {
+    if (!surface) return 'Pendiente';
+    if (!surfaceQA) return 'Estable';
+    if (surfaceQA.blockers.length > 0) return 'Crítico';
+    if (surfaceQA.warnings.length > 0) return 'Advertencia';
+    return 'Estable';
+  };
+
+  const getContourStatus = (): InspectorStatus => {
+    if (!contours) return 'Pendiente';
+    if (!contourQA) return 'Estable';
+    if (contourQA.blockers.length > 0) return 'Crítico';
+    if (contourQA.warnings.length > 0) return 'Advertencia';
+    return 'Estable';
+  };
+
+  const getVolumeStatus = (): InspectorStatus => {
+    if (!volumeResult) return 'Pendiente';
+    if (!volumeAudit || !volumeAudit.isValid || (volumeQA && volumeQA.blockers.length > 0)) {
+      return 'Crítico';
+    }
+    if ((volumeQA && volumeQA.warnings.length > 0) || (volumeAudit && volumeAudit.warnings.length > 0)) {
+      return 'Advertencia';
+    }
+    return 'Estable';
+  };
+
+  const getExportStatus = (): InspectorStatus => {
+    const isContoursBlocked = contourQA ? contourQA.blockers.length > 0 : false;
+    const isSurfaceBlocked = surfaceQA ? surfaceQA.blockers.length > 0 : false;
+    const hasContoursGenerated = contours !== null && contours !== undefined;
+    
+    if (isContoursBlocked || isSurfaceBlocked || !hasContoursGenerated) {
+      return 'Bloqueado';
+    }
+    
+    const hasContoursWarnings = contourQA ? contourQA.warnings.length > 0 : false;
+    const hasSurfaceWarnings = surfaceQA ? surfaceQA.warnings.length > 0 : false;
+    if (hasContoursWarnings || hasSurfaceWarnings) {
+      return 'Advertencia';
+    }
+    
+    return 'Listo';
+  };
+
+  const renderContextualHeader = () => {
+    let mode: 'Puntos' | 'Superficie' | 'Curvas' | 'Volumen' | 'Exportacion' = 'Puntos';
+    let title = '';
+    let description = '';
+    let status: InspectorStatus = 'Pendiente';
+
+    switch (currentState) {
+      case 'TERRAIN_REVIEWED':
+        mode = 'Puntos';
+        title = 'Revisión de terreno';
+        description = 'Distribución planimétrica del levantamiento';
+        status = getTerrainReviewStatus();
+        break;
+      case 'SURFACE_READY':
+        mode = 'Superficie';
+        title = 'Superficie interpolada';
+        description = 'Modelo raster IDW del terreno';
+        status = getSurfaceStatus();
+        break;
+      case 'CONTOURS_READY':
+        mode = 'Curvas';
+        title = 'Curvas de nivel';
+        description = 'Trazado vectorial mediante Marching Squares';
+        status = getContourStatus();
+        break;
+      case 'VOLUME_READY':
+        mode = 'Volumen';
+        title = 'Corte y relleno';
+        description = 'Estimación volumétrica sobre polígono';
+        status = getVolumeStatus();
+        break;
+      case 'EXPORT_READY':
+        mode = 'Exportacion';
+        title = 'Exportación';
+        description = 'Descarga de entregables técnicos';
+        status = getExportStatus();
+        break;
+      default:
+        mode = 'Puntos';
+        title = 'Preparación del análisis';
+        description = 'Configure los datos iniciales';
+        status = 'Pendiente';
+        break;
+    }
+
+    return (
+      <InspectorViewHeader
+        mode={mode}
+        title={title}
+        description={description}
+        status={status}
+      />
+    );
+  };
+
   const renderQABox = () => {
     if (!qaResult) return null;
     const { classification, quality, spatialCoverage, outlierResult } = qaResult;
@@ -1232,6 +1344,7 @@ export function InspectorPanel({
       </div>
 
       <div className="flex-1 p-4 space-y-4">
+        {renderContextualHeader()}
         {currentState !== 'EMPTY' && (
           <div className="border-b border-[#E2E8F0] pb-4 space-y-2 font-sans">
             <h3 className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#64748B] flex items-center gap-1.5">
