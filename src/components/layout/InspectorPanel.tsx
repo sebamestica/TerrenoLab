@@ -991,8 +991,8 @@ export function InspectorPanel({
               </h4>
 
               {!hasPolygonPoints ? (
-                <div className="text-[12.5px] text-[#64748B] italic bg-slate-50 border border-slate-100 rounded p-3 text-center">
-                  Dibuje un polígono de al menos 3 vértices en el visor central para calcular el volumen.
+                <div className="text-[12.5px] text-[#64748B] italic bg-slate-50 border border-slate-100 rounded p-3 text-center font-sans">
+                  Resultado: Dibuje un polígono para iniciar la cubicación.
                 </div>
               ) : volumeResult ? (
                 <div className="space-y-2">
@@ -1074,7 +1074,9 @@ export function InspectorPanel({
               <div className="space-y-1.5 text-[12.5px]">
                 <div className="flex justify-between">
                   <span className="text-[#64748B]">Estado:</span>
-                  {(!volumeAudit || !volumeAudit.isValid || (volumeQA && volumeQA.blockers.length > 0)) ? (
+                  {polygon.length < 3 ? (
+                    <span className="text-slate-400 font-bold">Pendiente</span>
+                  ) : (!volumeAudit || !volumeAudit.isValid || (volumeQA && volumeQA.blockers.length > 0)) ? (
                     <span className="text-[#EF4444] font-bold">Crítico</span>
                   ) : (volumeQA && volumeQA.warnings.length > 0) || (volumeAudit && volumeAudit.warnings.length > 0) ? (
                     <span className="text-[#D97706] font-bold">Advertencia</span>
@@ -1114,7 +1116,7 @@ export function InspectorPanel({
             </div>
 
             {/* Consolidado de Bloqueadores */}
-            {((volumeQA && volumeQA.blockers.length > 0) || (volumeAudit && volumeAudit.blockers.length > 0)) && (
+            {polygon.length >= 3 && ((volumeQA && volumeQA.blockers.length > 0) || (volumeAudit && volumeAudit.blockers.length > 0)) && (
               <div className="bg-[#FEF2F2] border border-[#EF4444]/20 rounded p-2.5 text-red-700 text-[11.5px] space-y-1.5 mt-2">
                 <span className="font-bold block text-red-800 uppercase tracking-wide text-[10px]">Bloqueadores:</span>
                 {volumeQA && volumeQA.blockers.map((b, idx) => (

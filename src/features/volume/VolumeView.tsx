@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { AreaChart, Eye, Spline, ShieldAlert, AlertTriangle, Play, RefreshCw, Trash2, ArrowLeft } from 'lucide-react';
+import { AreaChart, Eye, Spline, ShieldAlert, AlertTriangle, Play, RefreshCw, Trash2, ArrowLeft, Info } from 'lucide-react';
 import { TerrainPoint, TerrainMetrics } from '../../domain/terrain/types';
 import { IDWSurfaceResult } from '../../domain/terrain/interpolation';
 import { VolumeOptions, VolumeResult, calculateCutFillVolume, isPointInPolygon } from '../../domain/terrain/volume';
@@ -70,6 +70,15 @@ export function VolumeView({
   const qa = useMemo<VolumeQAResult>(() => {
     return validateVolumeAnalysis(surface, polygon, volumeOptions, selectedCRS, metrics);
   }, [surface, polygon, volumeOptions, selectedCRS, metrics]);
+
+  const isNoPolygon = polygon.length === 0;
+  const isIncompletePolygon = polygon.length > 0 && polygon.length < 3;
+  const criticalBlocker = qa.blockers.find(
+    (b) =>
+      b !== 'No se ha dibujado ningún polígono de análisis.' &&
+      b !== 'El polígono de análisis está incompleto: requiere al menos 3 vértices.'
+  ) || (volumeAudit && volumeAudit.blockers[0]);
+  const hasCriticalBlockers = !!criticalBlocker && !isNoPolygon && !isIncompletePolygon;
 
   // Trigger volume calculation reactively
   useEffect(() => {
@@ -332,7 +341,7 @@ export function VolumeView({
           <Button
             variant="ghost"
             onClick={() => setPolygonMode('idle')}
-            disabled={polygonMode === 'idle'}
+            disabled={polygon.length < 3 || polygonMode === 'idle'}
             className="px-3 py-1 text-[12.5px]"
           >
             Terminar
@@ -340,7 +349,7 @@ export function VolumeView({
         </div>
 
         <div className="text-[12px] font-mono text-slate-500">
-          Vértices: {polygon.length}
+          Vértices: {polygon.length} {polygon.length === 0 && <span className="text-slate-400 ml-1.5 font-sans">(Use "Agregar polígono" y marque al menos 3 vértices sobre el terreno)</span>}
         </div>
       </div>
 
@@ -410,16 +419,35 @@ export function VolumeView({
           </div>
         )}
 
+        {/* Informative banners for no polygon or incomplete polygon */}
+        {isNoPolygon && (
+          <div className="absolute top-4 left-4 right-4 bg-cyan-50/95 border border-cyan-200 text-cyan-800 p-3 rounded shadow-md text-[12.5px] flex items-center gap-2 backdrop-blur-sm z-20 font-sans">
+            <Info size={16} className="text-cyan-600 shrink-0" />
+            <div className="flex-1">
+              <strong>Esperando polígono:</strong> Dibuje un polígono de análisis para calcular corte y relleno. Use "Agregar polígono" y marque al menos 3 vértices sobre el terreno.
+            </div>
+          </div>
+        )}
+
+        {isIncompletePolygon && (
+          <div className="absolute top-4 left-4 right-4 bg-amber-50/95 border border-amber-200 text-amber-800 p-3 rounded shadow-md text-[12.5px] flex items-center gap-2 backdrop-blur-sm z-20 font-sans">
+            <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+            <div className="flex-1">
+              <strong>Polígono incompleto:</strong> Agregue al menos 3 vértices para poder realizar la cubicación.
+            </div>
+          </div>
+        )}
+
         {/* Blockers block directly on viewport */}
-        {(qa.blockers.length > 0 || (volumeAudit && volumeAudit.blockers.length > 0)) && (
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 select-none pointer-events-auto">
-            <div className="bg-white border border-[#EF4444]/20 rounded-lg p-5 max-w-md shadow-xl text-center space-y-3">
+        {hasCriticalBlockers && (
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 select-none pointer-events-auto z-20">
+            <div className="bg-white border border-[#EF4444]/20 rounded-lg p-5 max-w-md shadow-xl text-center space-y-3 font-sans">
               <ShieldAlert className="text-[#EF4444] mx-auto" size={32} />
               <h3 className="text-[14px] font-bold text-slate-800">
                 Análisis Volumétrico Bloqueado
               </h3>
               <p className="text-[12.5px] text-slate-600 leading-relaxed">
-                {qa.blockers[0] || (volumeAudit && volumeAudit.blockers[0])}
+                {criticalBlocker}
               </p>
             </div>
           </div>
@@ -489,11 +517,23 @@ export function VolumeView({
         <Button
           variant="primary"
           onClick={onProceed}
-          disabled={qa.blockers.length > 0 || (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid)}
-          className="px-5 py-2 font-semibold shadow-sm"
+          disabled={
+            volumeResult === null ||
+            qa.blockers.length > 0 ||
+            (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid)
+          }
+          className="px-5 py-2 font-semibold shadow-sm text-[12.5px]"
+          title={
+            (volumeResult === null || qa.blockers.length > 0 || (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid))
+              ? "Complete el análisis de volumen para exportar."
+              : undefined
+          }
         >
           <Play size={14} className="mr-1.5" />
-          Proceder a Exportar
+          {(volumeResult === null || qa.blockers.length > 0 || (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid))
+            ? "Complete el análisis de volumen para exportar."
+            : "Proceder a Exportar"
+          }
         </Button>
       </div>
     </div>

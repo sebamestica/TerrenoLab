@@ -66,3 +66,13 @@ Este documento presenta la planificación por fases para la evolución de Terren
 
 ## [x] Fase 7.1: Auditoría de volumen, consistencia de costos y cierre del módulo corte/relleno
 * **Objetivo**: Implementar un motor de consistencia altimétrica y de costos, elevar advertencias de parámetros negativos y auto-intersección de aristas a bloqueadores críticos de QA, y añadir avisos de precisión basados en el tamaño de muestreo de la grilla IDW.
+
+## [x] Fase 7.2: Estabilización visual del inspector, capas y módulo volumen
+* **Objetivo**: Estabilizar la interfaz de usuario en el flujo de pasos, garantizando que el inspector sea de solo lectura dinámica de estados globales, centralizando el control de capas en el AppShell (sin hacks CSS ni duplicidad), y convirtiendo los bloqueos visuales de volumen en advertencias informativas no invasivas mientras el polígono se encuentra incompleto.
+* **Hitos**:
+  - Reinstalación segura del header contextual del Inspector Panel dinámico (dependiente del estado global).
+  - Centralización de la barra de capas en el layout global AppShell usando inyección de props explícitas (`hideLocalLayerControls: true`) vía clonación de componentes de React.
+  - Conversión del modal bloqueante "Análisis Volumétrico Bloqueado" en una barra informativa superior no intrusiva en VolumeView, permitiendo el dibujo interactivo.
+  - Eliminación de hacks CSS globales/inline para esconder elementos del DOM.
+  - Asegurar build de producción exitoso e integridad de la lógica matemática intacta.
+
