@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { DeviceGuard } from "../components/layout/DeviceGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,8 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TerrenoLab v2 - Workspace Técnico Topográfico",
-  description: "Plataforma de procesamiento, visualización 2D y modelado de superficies topográficas y curvas de nivel.",
+  title: "TerrenoLab MVP",
+  description: "Alpha técnica para análisis topográfico preliminar desde CSV y DEM/GeoTIFF.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -27,7 +33,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <DeviceGuard>
+          {children}
+        </DeviceGuard>
+      </body>
     </html>
   );
 }

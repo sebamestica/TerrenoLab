@@ -1,3 +1,5 @@
+import { DEMMetadata } from '../../lib/dem/demTypes';
+
 export interface TerrainPoint {
   id: string;
   x: number;
@@ -8,8 +10,9 @@ export interface TerrainPoint {
 export interface TerrainDataset {
   name: string;
   points: TerrainPoint[];
-  source: 'csv' | 'sample';
+  source: 'csv' | 'sample' | 'dem';
   createdAt: string;
+  demMetadata?: DEMMetadata;
 }
 
 export interface TerrainMetrics {

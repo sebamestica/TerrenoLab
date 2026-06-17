@@ -16,6 +16,11 @@ import { Badge } from '../ui/Badge';
 import { InspectorViewHeader } from '../inspector/InspectorViewHeader';
 import { InspectorStatus } from '../inspector/InspectorStatusBadge';
 
+// Material Layers
+import { FillMaterialLayer, MaterialLayerResult } from '../../domain/terrain/materialLayers';
+import { MaterialLayersQAResult } from '../../domain/terrain/materialLayersQA';
+
+
 interface InspectorPanelProps {
   currentState: WorkflowState;
   dataset: TerrainDataset | null;
@@ -41,6 +46,10 @@ interface InspectorPanelProps {
   volumeResult?: VolumeResult | null;
   volumeQA?: VolumeQAResult | null;
   volumeAudit?: VolumeAuditResult | null;
+  materialLayers?: FillMaterialLayer[];
+  onMaterialLayersChange?: (layers: FillMaterialLayer[]) => void;
+  materialLayersResult?: MaterialLayerResult | null;
+  materialLayersQA?: MaterialLayersQAResult | null;
   onCRSChange?: (val: string) => void;
   onResolutionChange?: (val: 'low' | 'medium' | 'high') => void;
   onPowerChange?: (val: number) => void;
@@ -55,6 +64,10 @@ interface InspectorPanelProps {
   setShowGrid?: (val: boolean) => void;
   showContours?: boolean;
   setShowContours?: (val: boolean) => void;
+  polygonMode?: 'idle' | 'drawing' | 'editing';
+  lastPolygonEditTime?: string | null;
+  skippedVolume?: boolean;
+  skippedContours?: boolean;
 }
 
 const getCRSLabel = (crs: string) => {
@@ -122,6 +135,14 @@ export function InspectorPanel({
   volumeResult = null,
   volumeQA = null,
   volumeAudit = null,
+  materialLayers = [],
+  onMaterialLayersChange,
+  materialLayersResult = null,
+  materialLayersQA = null,
+  polygonMode = 'idle',
+  lastPolygonEditTime = null,
+  skippedVolume = false,
+  skippedContours = false,
 }: InspectorPanelProps) {
   const getTerrainReviewStatus = (): InspectorStatus => {
     if (!qaResult) return 'Bloqueado';
@@ -143,6 +164,7 @@ export function InspectorPanel({
   };
 
   const getContourStatus = (): InspectorStatus => {
+    if (skippedContours) return 'Omitido';
     if (!contours) return 'Pendiente';
     if (!contourQA) return 'Estable';
     if (contourQA.blockers.length > 0) return 'Crítico';
@@ -151,14 +173,29 @@ export function InspectorPanel({
   };
 
   const getVolumeStatus = (): InspectorStatus => {
-    if (!volumeResult) return 'Pendiente';
-    if (!volumeAudit || !volumeAudit.isValid || (volumeQA && volumeQA.blockers.length > 0)) {
-      return 'Crítico';
-    }
-    if ((volumeQA && volumeQA.warnings.length > 0) || (volumeAudit && volumeAudit.warnings.length > 0)) {
-      return 'Advertencia';
-    }
-    return 'Estable';
+    if (skippedVolume) return 'Omitido';
+    if (polygon.length === 0) return 'Pendiente';
+    if (polygon.length < 3) return 'Pendiente';
+
+    const hasCriticalBlockers = 
+      (volumeQA && volumeQA.blockers.some(b => 
+        b !== 'No se ha dibujado ningún polígono de análisis.' &&
+        b !== 'El polígono de análisis está incompleto: requiere al menos 3 vértices.'
+      )) || 
+      (volumeAudit && volumeAudit.blockers.length > 0) ||
+      (materialLayersQA && materialLayersQA.blockers.length > 0);
+
+    if (hasCriticalBlockers) return 'Crítico';
+
+    const hasWarnings = 
+      (volumeQA && volumeQA.warnings.length > 0) || 
+      (volumeAudit && volumeAudit.warnings.length > 0) ||
+      (materialLayersQA && materialLayersQA.warnings.length > 0);
+
+    if (hasWarnings) return 'Advertencia';
+
+    if (volumeResult) return 'Estable';
+    return 'Pendiente';
   };
 
   const getExportStatus = (): InspectorStatus => {
@@ -907,249 +944,314 @@ export function InspectorPanel({
 
         const hasPolygonPoints = polygon.length >= 3;
 
+        // Collect all QA messages to check if there are any
+        const qaBlockers = [
+          ...(volumeQA && polygon.length >= 3 ? volumeQA.blockers : []),
+          ...(volumeAudit ? volumeAudit.blockers : []),
+          ...(materialLayersQA ? materialLayersQA.blockers : [])
+        ].filter(b => 
+          b !== 'No se ha dibujado ningún polígono de análisis.' &&
+          b !== 'El polígono de análisis está incompleto: requiere al menos 3 vértices.'
+        );
+
+        const qaWarnings = [
+          ...(volumeQA && polygon.length >= 3 ? volumeQA.warnings : []),
+          ...(volumeAudit ? volumeAudit.warnings : []),
+          ...(materialLayersQA ? materialLayersQA.warnings : [])
+        ];
+
+        const hasQAItems = qaBlockers.length > 0 || qaWarnings.length > 0;
+
         return (
           <div className="space-y-4 font-sans text-[13px]">
-            <h3 className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0] pb-2">
-              Parámetros de Volumen
-            </h3>
-
-            {/* Inputs */}
-            <div className="space-y-3">
-              <div>
-                <label className="text-[12px] text-[#64748B] font-semibold block mb-1">
-                  Cota Objetivo (m):
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={volumeOptions.targetElevation}
-                  onChange={handleTargetElevationChange}
-                  className="w-full bg-white border border-[#E2E8F0] rounded p-2 text-[13px] text-[#0F172A] font-semibold focus:outline-none focus:ring-1 focus:ring-[#0891B2]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] text-[#64748B] font-semibold block mb-1">
-                    F. Compactación:
-                  </label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="1.0"
-                    value={volumeOptions.compactionFactor}
-                    onChange={handleCompactionFactorChange}
-                    className="w-full bg-white border border-[#E2E8F0] rounded p-1.5 text-[13px] text-[#0F172A] font-mono focus:outline-none"
-                  />
+            {/* 1. Editor de polígono */}
+            <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
+              <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#0891B2] border-b border-slate-200/60 pb-1 mb-1.5">
+                1. Editor de Polígono
+              </h4>
+              <div className="space-y-1.5 text-[12.5px] font-sans">
+                <div className="flex justify-between">
+                  <span className="text-[#64748B]">Modo actual:</span>
+                  <span className="font-semibold text-[#0F172A] capitalize">
+                    {polygonMode === 'drawing' ? 'Dibujando' : polygonMode === 'editing' ? 'Editando' : 'Inactivo'}
+                  </span>
                 </div>
-                <div>
-                  <label className="text-[11px] text-[#64748B] font-semibold block mb-1">
-                    F. Pérdida / Cont.:
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="1.0"
-                    value={volumeOptions.wasteFactor}
-                    onChange={handleWasteFactorChange}
-                    className="w-full bg-white border border-[#E2E8F0] rounded p-1.5 text-[13px] text-[#0F172A] font-mono focus:outline-none"
-                  />
+                <div className="flex justify-between">
+                  <span className="text-[#64748B]">Vértices:</span>
+                  <span className="font-semibold text-[#0F172A] font-mono">{polygon.length}</span>
                 </div>
-              </div>
-
-              <div>
-                <label className="text-[12px] text-[#64748B] font-semibold block mb-1">
-                  Precio material por m³ ($):
-                </label>
-                <input
-                  type="number"
-                  placeholder="Sin precio (ej. 1500)"
-                  value={volumeOptions.materialPricePerM3 === undefined ? '' : volumeOptions.materialPricePerM3}
-                  onChange={handlePriceChange}
-                  className="w-full bg-white border border-[#E2E8F0] rounded p-2 text-[13px] text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#0891B2]"
-                />
-              </div>
-
-              <div>
-                <label className="text-[12px] text-[#64748B] font-semibold block mb-1">
-                  Costo fijo de transporte ($):
-                </label>
-                <input
-                  type="number"
-                  placeholder="Sin costo fijo (ej. 50000)"
-                  value={volumeOptions.fixedTransportCost === undefined ? '' : volumeOptions.fixedTransportCost}
-                  onChange={handleTransportChange}
-                  className="w-full bg-white border border-[#E2E8F0] rounded p-2 text-[13px] text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#0891B2]"
-                />
+                <div className="flex justify-between">
+                  <span className="text-[#64748B]">Área:</span>
+                  <span className="font-semibold text-[#0F172A] font-mono">
+                    {volumeResult ? `${volumeResult.polygonArea.toFixed(2)} m²` : '--'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#64748B]">Perímetro:</span>
+                  <span className="font-semibold text-[#0F172A] font-mono">
+                    {volumeResult ? `${volumeResult.polygonPerimeter.toFixed(2)} m` : '--'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#64748B]">Estado:</span>
+                  {polygon.length === 0 ? (
+                    <span className="text-[#64748B] font-bold">Pendiente</span>
+                  ) : polygon.length < 3 ? (
+                    <span className="text-amber-600 font-bold">Incompleto</span>
+                  ) : qaBlockers.length > 0 ? (
+                    <span className="text-red-600 font-bold">Inválido</span>
+                  ) : (
+                    <span className="text-green-600 font-bold">Válido</span>
+                  )}
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#64748B]">Última edición:</span>
+                  <span className="text-[#0F172A] font-mono text-[11px] text-slate-500">
+                    {lastPolygonEditTime ? lastPolygonEditTime : 'Sin editar'}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Calculations results */}
-            <div className="border-t border-[#E2E8F0] pt-3 space-y-2">
-              <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#64748B] mb-1">
-                Resultados de Cubicación
+            {/* 2. Parámetros de cubicación */}
+            <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-white">
+              <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#64748B] border-b border-slate-200/60 pb-1 mb-1.5">
+                2. Parámetros de Cubicación
               </h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11.5px] text-[#64748B] font-semibold block mb-1">
+                    Cota Objetivo (m):
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={volumeOptions.targetElevation}
+                    onChange={handleTargetElevationChange}
+                    className="w-full bg-white border border-[#E2E8F0] rounded p-1.5 text-[12.5px] text-[#0F172A] font-semibold focus:outline-none focus:ring-1 focus:ring-[#0891B2]"
+                  />
+                </div>
 
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-[#64748B] font-semibold block mb-1">
+                      F. Compactación:
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="1.0"
+                      value={volumeOptions.compactionFactor}
+                      onChange={handleCompactionFactorChange}
+                      className="w-full bg-white border border-[#E2E8F0] rounded p-1 text-[12.5px] text-[#0F172A] font-mono focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-[#64748B] font-semibold block mb-1">
+                      F. Pérdida / Cont.:
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1.0"
+                      value={volumeOptions.wasteFactor}
+                      onChange={handleWasteFactorChange}
+                      className="w-full bg-white border border-[#E2E8F0] rounded p-1 text-[12.5px] text-[#0F172A] font-mono focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Resultados de volumen */}
+            <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
+              <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#64748B] border-b border-slate-200/60 pb-1 mb-1.5">
+                3. Resultados de Volumen
+              </h4>
               {!hasPolygonPoints ? (
-                <div className="text-[12.5px] text-[#64748B] italic bg-slate-50 border border-slate-100 rounded p-3 text-center font-sans">
-                  Resultado: Dibuje un polígono para iniciar la cubicación.
+                <div className="text-[12px] text-[#64748B] italic p-2 text-center">
+                  Cálculo pendiente: dibuje un polígono.
                 </div>
               ) : volumeResult ? (
-                <div className="space-y-2">
+                <div className="space-y-1.5 text-[12.5px]">
                   <div className="flex justify-between border-b border-slate-100 pb-0.5">
-                    <span className="text-[#64748B]">Área seleccionada:</span>
-                    <span className="text-[#0F172A] font-semibold font-mono">{volumeResult.polygonArea.toFixed(2)} m²</span>
-                  </div>
-                  <div className="flex justify-between border-b border-slate-100 pb-0.5">
-                    <span className="text-[#64748B]">Perímetro:</span>
-                    <span className="text-[#0F172A] font-semibold font-mono">{volumeResult.polygonPerimeter.toFixed(2)} m</span>
-                  </div>
-                  
-                  <div className="flex justify-between text-[11.5px] text-slate-500 font-mono">
-                    <span>Cotas del área:</span>
-                    <span>{volumeResult.minExistingZ.toFixed(2)}m a {volumeResult.maxExistingZ.toFixed(2)}m</span>
-                  </div>
-                  <div className="flex justify-between text-[11.5px] text-slate-500 font-mono">
-                    <span>Cota media:</span>
-                    <span>{volumeResult.meanExistingZ.toFixed(2)} m</span>
-                  </div>
-
-                  <div className="flex justify-between border-b border-slate-100 pb-0.5 pt-1">
-                    <span className="text-[#64748B]">Volumen de Relleno:</span>
-                    <span className="text-green-600 font-bold font-mono">+{volumeResult.rawFillVolume.toFixed(2)} m³</span>
+                    <span className="text-[#64748B]">Relleno Bruto:</span>
+                    <span className="text-green-600 font-bold font-mono">+{volumeResult.rawFillVolume.toFixed(1)} m³</span>
                   </div>
                   <div className="flex justify-between border-b border-slate-100 pb-0.5">
-                    <span className="text-[#64748B]">Volumen de Corte:</span>
-                    <span className="text-red-600 font-bold font-mono">-{volumeResult.rawCutVolume.toFixed(2)} m³</span>
+                    <span className="text-[#64748B]">Corte Bruto:</span>
+                    <span className="text-red-600 font-bold font-mono">-{volumeResult.rawCutVolume.toFixed(1)} m³</span>
                   </div>
                   <div className="flex justify-between border-b border-slate-100 pb-0.5">
                     <span className="text-[#64748B]">Balance Neto:</span>
                     <span className={`font-bold font-mono ${volumeResult.netVolume > 0 ? 'text-green-600' : volumeResult.netVolume < 0 ? 'text-red-600' : 'text-slate-600'}`}>
-                      {volumeResult.netVolume > 0 ? '+' : ''}{volumeResult.netVolume.toFixed(2)} m³
+                      {volumeResult.netVolume > 0 ? '+' : ''}{volumeResult.netVolume.toFixed(1)} m³
                     </span>
                   </div>
-
-                  <div className="flex justify-between border-b border-slate-100 pb-0.5 pt-1.5">
-                    <span className="text-[#0F172A] font-semibold">Relleno Recomendado:</span>
-                    <span className="text-[#0891B2] font-bold font-mono">
-                      {volumeResult.recommendedFillVolume.toFixed(2)} m³
-                    </span>
-                  </div>
-
-                  {volumeResult.estimatedMaterialCost !== undefined && (
-                    <div className="flex justify-between border-b border-slate-100 pb-0.5">
-                      <span className="text-[#64748B]">Costo Material:</span>
-                      <span className="text-slate-700 font-bold font-mono">
-                        ${volumeResult.estimatedMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                      </span>
-                    </div>
-                  )}
-
-                  {volumeResult.estimatedTotalCost !== undefined && (
-                    <div className="flex justify-between border-b border-slate-100 pb-0.5 pt-1 font-bold">
-                      <span className="text-[#0f172a]">Costo Total Estimado:</span>
-                      <span className="text-[#0891B2] font-mono">
-                        ${volumeResult.estimatedTotalCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="text-[11px] text-slate-500 font-mono leading-tight pt-1">
-                    Celdas evaluadas: {volumeResult.cellsInsidePolygon} de {volumeResult.cellsEvaluated}
+                  <div className="flex justify-between font-semibold">
+                    <span className="text-[#0F172A]">Volumen Recomendado:</span>
+                    <span className="text-[#0891B2] font-bold font-mono">{volumeResult.recommendedFillVolume.toFixed(1)} m³</span>
                   </div>
                 </div>
               ) : (
-                <div className="text-[12.5px] text-red-600 italic bg-red-50 border border-red-100 rounded p-3 text-center">
-                  Error de validación de polígono.
+                <div className="text-[12px] text-red-600 italic p-2 text-center">
+                  Error de validación del cálculo.
                 </div>
               )}
             </div>
 
-            {/* QA de Volumen section */}
-            <div className="border-t border-[#E2E8F0] pt-3 space-y-2">
-              <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#64748B] mb-1">
-                QA de Volumen
+            {/* 4. Materiales por capas */}
+            <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-white">
+              <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#64748B] border-b border-slate-200/60 pb-1 mb-1.5 flex justify-between items-center">
+                <span>4. Materiales por Capas</span>
+                {hasPolygonPoints && volumeResult && (
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById('materiales-tabla-header');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="text-[10px] text-[#0891B2] hover:underline font-bold capitalize outline-none"
+                  >
+                    Editar &rarr;
+                  </button>
+                )}
               </h4>
-              
-              <div className="space-y-1.5 text-[12.5px]">
-                <div className="flex justify-between">
-                  <span className="text-[#64748B]">Estado:</span>
-                  {polygon.length < 3 ? (
-                    <span className="text-slate-400 font-bold">Pendiente</span>
-                  ) : (!volumeAudit || !volumeAudit.isValid || (volumeQA && volumeQA.blockers.length > 0)) ? (
-                    <span className="text-[#EF4444] font-bold">Crítico</span>
-                  ) : (volumeQA && volumeQA.warnings.length > 0) || (volumeAudit && volumeAudit.warnings.length > 0) ? (
-                    <span className="text-[#D97706] font-bold">Advertencia</span>
-                  ) : (
-                    <span className="text-[#10B981] font-bold">Estable</span>
-                  )}
+              {!hasPolygonPoints ? (
+                <div className="text-[12px] text-[#64748B] italic p-1 text-center">
+                  Requiere área de análisis.
+                </div>
+              ) : (
+                <div className="space-y-1.5 text-[12.5px]">
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Cantidad de capas:</span>
+                    <span className="font-semibold">{materialLayers.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Volumen asignado:</span>
+                    <span className="font-semibold font-mono text-[#0891B2]">
+                      {materialLayersResult ? (materialLayersResult.totalRawFillVolume - materialLayersResult.unassignedFillVolume).toFixed(1) : '0.0'} m³
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">Volumen sin asignar:</span>
+                    <span className={`font-semibold font-mono ${materialLayersResult && materialLayersResult.unassignedFillVolume > 0.001 ? 'text-red-500 font-bold animate-pulse' : 'text-slate-600'}`}>
+                      {materialLayersResult ? materialLayersResult.unassignedFillVolume.toFixed(1) : '0.0'} m³
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-100 pt-1">
+                    <span className="text-[#64748B]">Costo total por materiales:</span>
+                    <span className="font-bold text-slate-800 font-mono">
+                      {materialLayersResult && materialLayersResult.totalEstimatedCost !== null ? (
+                        `$${materialLayersResult.totalEstimatedCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                      ) : (
+                        '---'
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 5. Costos */}
+            <div className="border border-[#E2E8F0] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
+              <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#64748B] border-b border-slate-200/60 pb-1 mb-1.5">
+                5. Costos
+              </h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-[#64748B] block mb-0.5">Precio General ($/m³):</label>
+                    <input
+                      type="number"
+                      placeholder="Ej. 1500"
+                      value={volumeOptions.materialPricePerM3 === undefined ? '' : volumeOptions.materialPricePerM3}
+                      onChange={handlePriceChange}
+                      className="w-full bg-white border border-[#E2E8F0] rounded p-1 text-[12.5px] text-[#0F172A] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-[#64748B] block mb-0.5">Transporte Fijo ($):</label>
+                    <input
+                      type="number"
+                      placeholder="Ej. 50000"
+                      value={volumeOptions.fixedTransportCost === undefined ? '' : volumeOptions.fixedTransportCost}
+                      onChange={handleTransportChange}
+                      className="w-full bg-white border border-[#E2E8F0] rounded p-1 text-[12.5px] text-[#0F172A] focus:outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex justify-between">
-                  <span className="text-[#64748B]">Celdas dentro:</span>
-                  <span className="text-[#0F172A] font-mono font-semibold">
-                    {volumeResult ? volumeResult.cellsInsidePolygon : 0} de {volumeResult ? volumeResult.cellsEvaluated : 0}
-                  </span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span className="text-[#64748B]">Área polígono:</span>
-                  <span className="text-[#0F172A] font-mono font-semibold">
-                    {volumeResult ? `${volumeResult.polygonArea.toFixed(2)} m²` : '0.00 m²'}
-                  </span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span className="text-[#64748B]">Área muestreada:</span>
-                  <span className="text-[#0F172A] font-mono font-semibold">
-                    {volumeAudit ? `${volumeAudit.sampledArea.toFixed(2)} m²` : '0.00 m²'}
-                  </span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span className="text-[#64748B]">Diferencia:</span>
-                  <span className="text-[#0F172A] font-mono font-semibold">
-                    {volumeAudit ? `${(Math.abs(1 - volumeAudit.areaCoverageRatio) * 100).toFixed(1)}%` : '0.0%'}
-                  </span>
-                </div>
+                {hasPolygonPoints && volumeResult && (
+                  <div className="space-y-1 text-[12.5px] border-t border-slate-200/50 pt-2">
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B]">Costo por materiales:</span>
+                      <span className="font-semibold font-mono">
+                        {materialLayersResult && materialLayersResult.totalEstimatedCost !== null ? (
+                          `$${materialLayersResult.totalEstimatedCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                        ) : volumeResult.estimatedMaterialCost !== undefined ? (
+                          `$${volumeResult.estimatedMaterialCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                        ) : (
+                          '---'
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B]">Costo de transporte:</span>
+                      <span className="font-semibold font-mono">
+                        {volumeOptions.fixedTransportCost !== undefined ? (
+                          `$${volumeOptions.fixedTransportCost.toLocaleString()}`
+                        ) : (
+                          '---'
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-bold text-[#0891B2] border-t border-slate-100 pt-1.5">
+                      <span>Costo estimado total:</span>
+                      <span className="font-mono">
+                        {materialLayersResult && materialLayersResult.totalEstimatedCost !== null ? (
+                          `$${((materialLayersResult.totalEstimatedCost) + (volumeOptions.fixedTransportCost ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                        ) : volumeResult.estimatedTotalCost !== undefined ? (
+                          `$${volumeResult.estimatedTotalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                        ) : (
+                          '---'
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Consolidado de Bloqueadores */}
-            {polygon.length >= 3 && ((volumeQA && volumeQA.blockers.length > 0) || (volumeAudit && volumeAudit.blockers.length > 0)) && (
-              <div className="bg-[#FEF2F2] border border-[#EF4444]/20 rounded p-2.5 text-red-700 text-[11.5px] space-y-1.5 mt-2">
-                <span className="font-bold block text-red-800 uppercase tracking-wide text-[10px]">Bloqueadores:</span>
-                {volumeQA && volumeQA.blockers.map((b, idx) => (
-                  <div key={`qa-blocker-${idx}`} className="leading-tight flex items-start gap-1">
-                    <span className="text-red-500 shrink-0">•</span>
-                    <span>{b}</span>
+            {/* 6. QA / Advertencias (Only rendered if warning/blocker exists) */}
+            {hasPolygonPoints && hasQAItems && (
+              <div className="border border-[#F59E0B]/20 rounded-lg p-3 space-y-2 bg-[#FFFBEB]">
+                <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#D97706] border-b border-[#F59E0B]/20 pb-1 mb-1.5">
+                  6. QA / Advertencias
+                </h4>
+                
+                {qaBlockers.length > 0 && (
+                  <div className="text-[11.5px] text-red-700 space-y-1 font-sans">
+                    <span className="font-bold block text-red-800">Bloqueadores Críticos:</span>
+                    {qaBlockers.map((b, idx) => (
+                      <div key={`qa-blk-${idx}`} className="leading-tight flex items-start gap-1">
+                        <span className="text-red-500 shrink-0">•</span>
+                        <span>{b}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {volumeAudit && volumeAudit.blockers.map((b, idx) => (
-                  <div key={`audit-blocker-${idx}`} className="leading-tight flex items-start gap-1">
-                    <span className="text-red-500 shrink-0">•</span>
-                    <span>{b}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+                )}
 
-            {/* Consolidado de Advertencias */}
-            {((volumeQA && volumeQA.warnings.length > 0) || (volumeAudit && volumeAudit.warnings.length > 0)) && (
-              <div className="bg-[#FFFBEB] border border-[#F59E0B]/20 rounded p-2.5 text-amber-700 text-[11.5px] space-y-1.5 mt-2">
-                <span className="font-bold block text-amber-800 uppercase tracking-wide text-[10px]">Advertencias:</span>
-                {volumeQA && volumeQA.warnings.map((w, idx) => (
-                  <div key={`qa-warn-${idx}`} className="leading-tight flex items-start gap-1">
-                    <span className="text-amber-500 shrink-0">•</span>
-                    <span>{w}</span>
+                {qaWarnings.length > 0 && (
+                  <div className="text-[11.5px] text-amber-700 space-y-1 font-sans pt-1 border-t border-[#F59E0B]/10">
+                    <span className="font-bold block text-amber-800">Advertencias Técnicas:</span>
+                    {qaWarnings.map((w, idx) => (
+                      <div key={`qa-wrn-${idx}`} className="leading-tight flex items-start gap-1">
+                        <span className="text-amber-500 shrink-0">•</span>
+                        <span>{w}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {volumeAudit && volumeAudit.warnings.map((w, idx) => (
-                  <div key={`audit-warn-${idx}`} className="leading-tight flex items-start gap-1">
-                    <span className="text-amber-500 shrink-0">•</span>
-                    <span>{w}</span>
-                  </div>
-                ))}
+                )}
               </div>
             )}
           </div>

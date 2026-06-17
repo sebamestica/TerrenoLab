@@ -12,7 +12,7 @@ interface ValidationViewProps {
 }
 
 export function ValidationView({ validation, qaResult, onProceed, onReset }: ValidationViewProps) {
-  const { isValid, rejectedRows, warnings, summary, validPoints } = validation;
+  const { isValid, rejectedRows, warnings, summary, validPoints, demMetadata, demQA } = validation;
 
   return (
     <div className="flex-1 flex flex-col p-6 space-y-6 max-w-3xl mx-auto w-full select-none bg-white overflow-y-auto">
@@ -22,29 +22,110 @@ export function ValidationView({ validation, qaResult, onProceed, onReset }: Val
           2. Validar Levantamiento
         </h1>
         <p className="text-[13px] text-[#64748B]">
-          Inspeccione los controles de calidad espacial e integridad de coordenadas antes de revisar en planta.
+          {demMetadata 
+            ? 'Revisión técnica de la nube de puntos generada desde el archivo DEM local.' 
+            : 'Inspeccione los controles de calidad espacial e integridad de coordenadas antes de revisar en planta.'}
         </p>
       </div>
 
+      {/* DEM Metadata Banner */}
+      {demMetadata && demQA && (
+        <div className="border border-[#E2E8F0] rounded p-4 space-y-4 bg-[#F8FAFC]">
+          <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#0F172A] border-b border-[#E2E8F0] pb-2 block">
+            Diagnóstico DEM ({demMetadata.sourceFormat})
+          </span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[12px] text-[#64748B]">
+            <div>
+              <span className="block mb-0.5">Celdas Originales:</span>
+              <span className="font-mono font-semibold text-[#0F172A]">{demQA.diagnostics.originalCellCount}</span>
+            </div>
+            <div>
+              <span className="block mb-0.5">Puntos Generados:</span>
+              <span className="font-mono font-semibold text-[#10B981]">{demQA.diagnostics.sampledPointCount}</span>
+            </div>
+            <div>
+              <span className="block mb-0.5">Descartados:</span>
+              <span className={`font-mono font-semibold ${demQA.diagnostics.discardedRatio > 0.3 ? 'text-[#EF4444]' : 'text-[#0F172A]'}`}>
+                {demQA.diagnostics.discardedPointCount} ({(demQA.diagnostics.discardedRatio * 100).toFixed(1)}%)
+              </span>
+            </div>
+            <div>
+              <span className="block mb-0.5">Muestreo Aplicado:</span>
+              <span className="font-mono font-semibold text-[#0F172A]">Stride {demMetadata.samplingStep}</span>
+            </div>
+            <div>
+              <span className="block mb-0.5">Cota Mínima:</span>
+              <span className="font-mono font-semibold text-[#0F172A]">{demQA.diagnostics.minZ.toFixed(2)}</span>
+            </div>
+            <div>
+              <span className="block mb-0.5">Cota Máxima:</span>
+              <span className="font-mono font-semibold text-[#0F172A]">{demQA.diagnostics.maxZ.toFixed(2)}</span>
+            </div>
+            <div>
+              <span className="block mb-0.5">Desnivel (ΔZ):</span>
+              <span className="font-mono font-semibold text-[#0F172A]">{demQA.diagnostics.deltaZ.toFixed(2)}</span>
+            </div>
+            <div>
+              <span className="block mb-0.5">CRS Detectado:</span>
+              <span className="font-mono font-semibold text-[#0F172A]">
+                {demQA.diagnostics.hasCRS ? `EPSG:${demQA.diagnostics.epsg}` : 'Local XY'}
+              </span>
+            </div>
+            {demMetadata.processingTimeMs && (
+              <div>
+                <span className="block mb-0.5">Tiempo de Procesamiento:</span>
+                <span className="font-mono font-semibold text-[#0F172A]">{(demMetadata.processingTimeMs / 1000).toFixed(2)}s</span>
+              </div>
+            )}
+            <div>
+              <span className="block mb-0.5">Estado DEM:</span>
+              <span className={`font-mono font-bold ${
+                demQA.label === 'Estable' ? 'text-[#10B981]' : 
+                demQA.label === 'Advertencia' ? 'text-[#EAB308]' : 
+                'text-[#EF4444]'
+              }`}>
+                {demQA.label}
+              </span>
+            </div>
+            {demQA.diagnostics.suspectedRasterType !== 'DEM' && demQA.diagnostics.suspectedRasterType !== 'UNKNOWN' && (
+              <div>
+                <span className="block mb-0.5">Sospecha de Derivado:</span>
+                <span className="font-mono font-bold text-[#EAB308]">
+                  {demQA.diagnostics.suspectedRasterType} ({demQA.diagnostics.confidence})
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Hero Status Alert */}
       <div className={`border rounded p-4 flex items-start gap-3 ${
-        isValid 
-          ? 'bg-[#F0FDF4] border-[#10B981]/20 text-[#10B981]' 
+        (demQA ? demQA.isValid : isValid)
+          ? (demQA?.label === 'Advertencia' ? 'bg-[#FEFCE8] border-[#EAB308]/30 text-[#A16207]' : 'bg-[#F0FDF4] border-[#10B981]/20 text-[#10B981]')
           : 'bg-[#FEF2F2] border-[#EF4444]/20 text-[#EF4444]'
       }`}>
-        {isValid ? (
-          <ShieldCheck size={24} className="shrink-0 mt-0.5 text-[#10B981]" />
+        {(demQA ? demQA.isValid : isValid) ? (
+          demQA?.label === 'Advertencia' 
+            ? <AlertTriangle size={24} className="shrink-0 mt-0.5 text-[#EAB308]" /> 
+            : <ShieldCheck size={24} className="shrink-0 mt-0.5 text-[#10B981]" />
         ) : (
           <XCircle size={24} className="shrink-0 mt-0.5 text-[#EF4444]" />
         )}
         <div className="space-y-1">
           <h3 className="text-[13px] font-semibold text-[#0F172A] uppercase tracking-wider">
-            {isValid ? 'Levantamiento Aprobado' : 'Levantamiento Rechazado'}
+            {demQA 
+              ? (demQA.isValid ? (demQA.label === 'Advertencia' ? 'DEM listo para revisión (con advertencias)' : 'DEM Procesado') : 'DEM Bloqueado')
+              : (isValid ? 'Levantamiento Aprobado' : 'Levantamiento Rechazado')}
           </h3>
           <p className="text-[12px] text-[#64748B] leading-relaxed">
-            {isValid 
-              ? `El archivo contiene ${summary.validRows} puntos conformes. Cumple con los criterios geométricos mínimos para el visor.`
-              : `Se detectaron problemas críticos en el archivo. Corrija los errores y cargue una nueva versión.`}
+            {demQA 
+              ? (demQA.isValid 
+                ? (demQA.label === 'Advertencia' ? 'Revise el diagnóstico y las advertencias antes de continuar con la generación de superficie.' : 'DEM procesado exitosamente. El archivo es apto para generar superficie.')
+                : 'El archivo no es apto para generar superficie debido a errores críticos o formato derivado.')
+              : (isValid 
+                ? `El archivo contiene ${summary.validRows} puntos conformes. Cumple con los criterios geométricos mínimos para el visor.`
+                : `Se detectaron problemas críticos en el archivo. Corrija los errores y cargue una nueva versión.`)}
           </p>
         </div>
       </div>
@@ -52,25 +133,29 @@ export function ValidationView({ validation, qaResult, onProceed, onReset }: Val
       {/* Summary Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded p-4">
         <div>
-          <span className="text-[12px] text-[#64748B] block">Filas Totales:</span>
+          <span className="text-[12px] text-[#64748B] block">{demMetadata ? 'Celdas Evaluadas:' : 'Filas Totales:'}</span>
           <span className="text-[13px] font-semibold text-[#0F172A] block mt-0.5 font-mono">{summary.totalRows}</span>
         </div>
         <div>
           <span className="text-[12px] text-[#64748B] block">Puntos Válidos:</span>
           <span className="text-[13px] font-semibold text-[#10B981] block mt-0.5 font-mono">{summary.validRows}</span>
         </div>
-        <div>
-          <span className="text-[12px] text-[#64748B] block">Filas Rechazadas:</span>
-          <span className={`text-[13px] font-semibold block mt-0.5 font-mono ${summary.rejectedRows > 0 ? 'text-[#EF4444]' : 'text-[#64748B]'}`}>
-            {summary.rejectedRows}
-          </span>
-        </div>
-        <div>
-          <span className="text-[12px] text-[#64748B] block">Duplicados X/Y:</span>
-          <span className={`text-[13px] font-semibold block mt-0.5 font-mono ${summary.duplicatedXY > 0 ? 'text-[#F59E0B]' : 'text-[#64748B]'}`}>
-            {summary.duplicatedXY}
-          </span>
-        </div>
+        {!demMetadata && (
+          <>
+            <div>
+              <span className="text-[12px] text-[#64748B] block">Filas Rechazadas:</span>
+              <span className={`text-[13px] font-semibold block mt-0.5 font-mono ${summary.rejectedRows > 0 ? 'text-[#EF4444]' : 'text-[#64748B]'}`}>
+                {summary.rejectedRows}
+              </span>
+            </div>
+            <div>
+              <span className="text-[12px] text-[#64748B] block">Duplicados X/Y:</span>
+              <span className={`text-[13px] font-semibold block mt-0.5 font-mono ${summary.duplicatedXY > 0 ? 'text-[#F59E0B]' : 'text-[#64748B]'}`}>
+                {summary.duplicatedXY}
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Elevation Stats (if points exist) */}
@@ -239,11 +324,22 @@ export function ValidationView({ validation, qaResult, onProceed, onReset }: Val
       )}
 
       {/* Errors List (Errores Agrupados) */}
-      {rejectedRows.length > 0 && (
-        <div className="border border-[#E2E8F0] rounded p-4 space-y-3">
-          <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#EF4444] border-b border-[#EF4444]/20 pb-2 block">
-            Errores de Formato de Fila ({rejectedRows.length})
-          </span>
+      {demQA && demQA.blockers.length > 0 && (
+            <div className="space-y-2">
+              {demQA.blockers.map((error, idx) => (
+                <div key={idx} className="flex gap-2 items-start bg-[#FEF2F2] border border-[#EF4444]/20 text-[#EF4444] text-[12px] p-3 rounded">
+                  <XCircle size={16} className="shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!demQA && rejectedRows.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#0F172A] border-b border-[#E2E8F0] pb-2 block">
+                Filas de datos rechazadas
+              </span>
           <div className="space-y-2 max-h-[160px] overflow-y-auto">
             {rejectedRows.map((err, idx) => (
               <div key={idx} className="text-[12px] p-2 bg-[#FEF2F2] border border-[#EF4444]/10 text-[#EF4444] rounded font-mono">
@@ -255,11 +351,25 @@ export function ValidationView({ validation, qaResult, onProceed, onReset }: Val
       )}
 
       {/* Warnings List */}
-      {warnings.length > 0 && (
-        <div className="border border-[#E2E8F0] rounded p-4 space-y-3">
-          <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#F59E0B] border-b border-[#F59E0B]/20 pb-2 block">
-            Advertencias de Estructura ({warnings.length})
-          </span>
+      {demQA && demQA.warnings.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#0F172A] border-b border-[#E2E8F0] pb-2 block mt-6">
+                Advertencias del DEM
+              </span>
+              {demQA.warnings.map((warning, idx) => (
+                <div key={idx} className="flex gap-2 items-start bg-[#FEFCE8] border border-[#EAB308]/30 text-[#A16207] text-[12px] p-3 rounded">
+                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                  <span>{warning}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!demQA && warnings.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[#0F172A] border-b border-[#E2E8F0] pb-2 block mt-6">
+                Advertencias de parsing
+              </span>
           <div className="space-y-2">
             {warnings.map((warn, idx) => (
               <div key={idx} className="text-[12px] p-2 bg-[#FFFBEB] border border-[#F59E0B]/10 text-[#F59E0B] rounded font-mono">
@@ -311,7 +421,7 @@ export function ValidationView({ validation, qaResult, onProceed, onReset }: Val
         )}
         
         <div className="flex justify-end gap-3">
-          {isValid && qaResult?.quality.canReview ? (
+          {(demQA ? demQA.isValid : (isValid && qaResult?.quality.canReview)) ? (
             <>
               <Button variant="ghost" onClick={onReset}>
                 <RefreshCw size={12} className="mr-1.5" />

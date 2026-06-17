@@ -29,6 +29,8 @@ import {
   getCRSMetadata
 } from '../lib/export/exportUtils';
 import { parseCSV } from '../lib/csv/csvParser';
+import { parseDEM } from '../lib/dem/demParser';
+import { analyzeDEMQuality } from '../domain/terrain/demQA';
 import { generateSampleCSVText } from '../lib/sampleData/sampleTerrain';
 
 // Volume Domain & Features
@@ -36,8 +38,18 @@ import { VolumeOptions, VolumeResult, calculateCutFillVolume } from '../domain/t
 import { validateVolumeAnalysis, VolumeQAResult } from '../domain/terrain/volumeQA';
 import { analyzeVolumeConsistency, VolumeAuditResult } from '../domain/terrain/volumeAudit';
 
+// Material Layers Domain
+import { FillMaterialLayer, MaterialLayerResult, DEFAULT_MATERIAL_LAYERS, calculateMaterialLayerVolumes } from '../domain/terrain/materialLayers';
+import { MaterialLayersQAResult, validateMaterialLayers } from '../domain/terrain/materialLayersQA';
+import { TERRAIN_LIMITS } from '../config/limits';
+
+
 // Feature Views
+
 import { StartView } from '../features/start/StartView';
+import { sanitizeText } from '../lib/security/sanitizeText';
+
+type AppState = 'EMPTY' | 'FILE_SELECTED' | 'VALIDATED' | 'TERRAIN_REVIEWED' | 'SURFACE_READY' | 'CONTOURS_READY' | 'VOLUME_READY' | 'EXPORT_READY' | 'ERROR';
 import { ImportView } from '../features/import/ImportView';
 import { ValidationView } from '../features/validation/ValidationView';
 import { TerrainReviewView } from '../features/terrain/TerrainReviewView';
@@ -82,6 +94,7 @@ export default function TerrenoLabPage() {
   const [surfaceQA, setSurfaceQA] = useState<SurfaceQAResult | null>(null);
   const [contoursResult, setContoursResult] = useState<ContourResult | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isProcessingText, setIsProcessingText] = useState<string | undefined>(undefined);
   const [isProcessingContours, setIsProcessingContours] = useState<boolean>(false);
 
   // Export States
@@ -102,7 +115,23 @@ export default function TerrenoLabPage() {
   const [exportGeoJSON, setExportGeoJSON] = useState<boolean>(true);
 
   // Volume States
-  const [polygon, setPolygon] = useState<Array<{ x: number; y: number }>>([]);
+  const [polygon, setPolygonState] = useState<Array<{ x: number; y: number }>>([]);
+  const [polygonMode, setPolygonMode] = useState<'drawing' | 'editing' | 'idle'>('idle');
+  const [lastPolygonEditTime, setLastPolygonEditTime] = useState<string | null>(null);
+
+  const setPolygon = (newPoly: Array<{ x: number; y: number }> | ((prev: Array<{ x: number; y: number }>) => Array<{ x: number; y: number }>)) => {
+    setSkippedVolume(false);
+    if (typeof newPoly === 'function') {
+      setPolygonState((prev) => {
+        const next = newPoly(prev);
+        setLastPolygonEditTime(new Date().toLocaleTimeString());
+        return next;
+      });
+    } else {
+      setPolygonState(newPoly);
+      setLastPolygonEditTime(new Date().toLocaleTimeString());
+    }
+  };
   const [volumeOptions, setVolumeOptions] = useState<VolumeOptions>({
     targetElevation: 0,
     compactionFactor: 1.2,
@@ -112,10 +141,16 @@ export default function TerrenoLabPage() {
   });
   const [volumeResult, setVolumeResult] = useState<VolumeResult | null>(null);
 
+  // Material Layers States
+  const [materialLayers, setMaterialLayers] = useState<FillMaterialLayer[]>(DEFAULT_MATERIAL_LAYERS);
+
+
   // Layer Visibility Controls
   const [showPoints, setShowPoints] = useState<boolean>(true);
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [showContours, setShowContours] = useState<boolean>(true);
+  const [skippedContours, setSkippedContours] = useState<boolean>(false);
+  const [skippedVolume, setSkippedVolume] = useState<boolean>(false);
 
   // 1. Compute metrics reactively using domain logic
   const metrics = useMemo<TerrainMetrics | null>(() => {
@@ -139,6 +174,21 @@ export default function TerrenoLabPage() {
     if (!surface || polygon.length < 3 || !volumeResult) return null;
     return analyzeVolumeConsistency(surface, polygon, volumeResult, volumeOptions);
   }, [surface, polygon, volumeResult, volumeOptions]);
+
+  // 4b. Compute Material Layers Result reactively
+  const materialLayersResult = useMemo<MaterialLayerResult | null>(() => {
+    if (!surface || polygon.length < 3) return null;
+    return calculateMaterialLayerVolumes(surface, polygon, volumeOptions.targetElevation, materialLayers);
+  }, [surface, polygon, volumeOptions.targetElevation, materialLayers]);
+
+  // 4c. Compute Material Layers QA reactively
+  const materialLayersQA = useMemo<MaterialLayersQAResult | null>(() => {
+    return validateMaterialLayers(materialLayers, volumeResult, {
+      unassignedFillVolume: materialLayersResult?.unassignedFillVolume ?? 0,
+      layerVolumes: materialLayersResult?.layers ?? [],
+    });
+  }, [materialLayers, volumeResult, materialLayersResult]);
+
 
   // 5. Compute Export QA reactively using domain validation functions
   const exportQA = useMemo<ExportQAResult | null>(() => {
@@ -366,15 +416,19 @@ export default function TerrenoLabPage() {
     volumeResult,
     volumeOptions,
     volumeQA,
-    volumeAudit
+    volumeAudit,
+    materialLayersResult,
+    materialLayersQA
   ]);
 
   // 6. Compute Steps for Sidebar (Calculated dynamically)
   const steps = useMemo(() => {
     const canInterp = qaResult?.quality?.canInterpolate ?? false;
-    const canExport = contourQA !== null && contourQA.blockers.length === 0 && volumeQA !== null && volumeQA.blockers.length === 0;
+    const canExport = (skippedContours || (contourQA !== null && contourQA.blockers.length === 0)) && 
+                      (skippedVolume || (volumeQA !== null && volumeQA.blockers.length === 0 &&
+                      (!materialLayersQA || materialLayersQA.blockers.length === 0)));
     return getWorkflowSteps(workflowState, canInterp, canExport);
-  }, [workflowState, qaResult, contourQA, volumeQA]);
+  }, [workflowState, qaResult, contourQA, volumeQA, materialLayersQA, skippedVolume, skippedContours]);
 
   const currentStepIndex = steps.findIndex(s => s.state === activeView);
 
@@ -421,65 +475,151 @@ export default function TerrenoLabPage() {
   };
 
   const handleLoadSample = () => {
-    const csvText = generateSampleCSVText();
-    setRawCSVText(csvText);
-    setFileName('terreno_prueba.csv');
-    setIsSampleData(true);
-    const result = parseCSV(csvText);
-    setCsvHeaders(result.headers);
-    setParsedRows(result.rows);
-    const preview = result.rows.slice(0, 20).map(row => 
-      result.headers.map(h => row[h] || '')
-    );
-    setCsvLinesPreview(preview);
-    const emptyMapping: ColumnMapping = {
-      idColumn: '',
-      xColumn: '',
-      yColumn: '',
-      zColumn: '',
-    };
-    setAutoMapping(emptyMapping);
-    setWorkflowState('FILE_SELECTED');
-    setActiveView('FILE_SELECTED');
+    try {
+      const csvText = generateSampleCSVText();
+      setRawCSVText(csvText);
+      setFileName('terreno_prueba.csv');
+      setIsSampleData(true);
+      const result = parseCSV(csvText);
+      setCsvHeaders(result.headers);
+      setParsedRows(result.rows);
+      const preview = result.rows.slice(0, 20).map(row => 
+        result.headers.map(h => row[h] || '')
+      );
+      setCsvLinesPreview(preview);
+      const emptyMapping: ColumnMapping = {
+        idColumn: '',
+        xColumn: '',
+        yColumn: '',
+        zColumn: '',
+      };
+      setAutoMapping(emptyMapping);
+      setWorkflowState('FILE_SELECTED');
+      setActiveView('FILE_SELECTED');
+    } catch (e: any) {
+      triggerSecurityError(`Error al procesar el dataset de prueba: ${e.message}`);
+    }
   };
 
   const handleFileUpload = (fileText: string, name: string) => {
-    // 1. Size check (< 10MB)
-    if (fileText.length > 10 * 1024 * 1024) {
-      triggerSecurityError('El archivo supera el límite de tamaño permitido (10 MB).');
-      return;
+    try {
+      // 1. Size check
+      if (fileText.length > TERRAIN_LIMITS.maxCsvSizeMb * 1024 * 1024) {
+        triggerSecurityError('El archivo es demasiado grande para esta versión.');
+        return;
+      }
+      // 2. Extension check (.csv, .txt)
+      const extension = name.split('.').pop()?.toLowerCase();
+      if (extension !== 'csv' && extension !== 'txt') {
+        triggerSecurityError('Formato de archivo no permitido. Solo se aceptan archivos .csv y .txt.');
+        return;
+      }
+      // 3. HTML tag check (reject web files)
+      const htmlRegex = /<!DOCTYPE\s+html|<html|<head|<body/i;
+      if (htmlRegex.test(fileText)) {
+        triggerSecurityError('El archivo contiene etiquetas HTML no permitidas (posible archivo web malicioso o inválido).');
+        return;
+      }
+      setRawCSVText(fileText);
+      setFileName(sanitizeFilename(name));
+      setIsSampleData(false);
+      const result = parseCSV(fileText);
+      setCsvHeaders(result.headers);
+      setParsedRows(result.rows);
+      const preview = result.rows.slice(0, 20).map(row => 
+        result.headers.map(h => row[h] || '')
+      );
+      setCsvLinesPreview(preview);
+      const emptyMapping: ColumnMapping = {
+        idColumn: '',
+        xColumn: '',
+        yColumn: '',
+        zColumn: '',
+      };
+      setAutoMapping(emptyMapping);
+      setWorkflowState('FILE_SELECTED');
+      setActiveView('FILE_SELECTED');
+    } catch (e: any) {
+      triggerSecurityError(`Error al procesar el archivo CSV: ${e.message}`);
     }
-    // 2. Extension check (.csv, .txt)
-    const extension = name.split('.').pop()?.toLowerCase();
-    if (extension !== 'csv' && extension !== 'txt') {
-      triggerSecurityError('Formato de archivo no permitido. Solo se aceptan archivos .csv y .txt.');
-      return;
+  };
+
+  const handleFileSelect = async (file: File) => {
+    setIsProcessing(true);
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    
+    try {
+      if (extension === 'csv' || extension === 'txt') {
+        const fileText = await file.text();
+        setIsSampleData(false);
+        handleFileUpload(fileText, file.name);
+      } else if (extension === 'tif' || extension === 'tiff' || extension === 'geotiff') {
+        if (file.size > TERRAIN_LIMITS.maxDemSizeMb * 1024 * 1024) {
+          triggerSecurityError('El archivo es demasiado grande para esta versión.');
+          setIsProcessing(false);
+          return;
+        }
+
+        setIsProcessingText('Procesando DEM. Esto puede tardar unos segundos según el tamaño del archivo...');
+
+        setFileName(file.name);
+        setIsSampleData(false);
+
+        const buffer = await file.arrayBuffer();
+        const parseResult = await parseDEM(buffer, file.name);
+        const demQA = analyzeDEMQuality(parseResult);
+
+        const newDataset: TerrainDataset = {
+          name: file.name,
+          points: parseResult.points,
+          source: 'dem',
+          createdAt: new Date().toISOString(),
+          demMetadata: parseResult.metadata,
+        };
+
+        const valResult: ValidationResult = {
+          isValid: true,
+          validPoints: parseResult.points,
+          rejectedRows: [],
+          warnings: parseResult.warnings.map(w => ({ message: w })),
+          summary: {
+            totalRows: parseResult.metadata.originalCellCount,
+            validRows: parseResult.points.length,
+            rejectedRows: 0,
+            duplicatedXY: 0,
+            minZ: parseResult.metadata.minZ,
+            maxZ: parseResult.metadata.maxZ,
+            deltaZ: parseResult.metadata.maxZ - parseResult.metadata.minZ,
+          },
+          demMetadata: parseResult.metadata,
+          demQA: demQA
+        };
+
+        const qaRes = performTopographicQA(valResult.validPoints);
+
+        setValidation(valResult);
+        setQaResult(qaRes);
+        setDataset(newDataset);
+
+        setSurface(null);
+        setSurfaceQA(null);
+        setContoursResult(null);
+        setPolygon([]);
+        setVolumeResult(null);
+        setMaterialLayers(DEFAULT_MATERIAL_LAYERS);
+
+        // DEM skips CSV mapping step, jumps straight to VALIDATED
+        setWorkflowState('VALIDATED');
+        setActiveView('VALIDATED');
+      } else {
+        triggerSecurityError('Formato de archivo no permitido. Solo se aceptan .csv, .txt, .tif, .tiff o .geotiff');
+      }
+    } catch (e: any) {
+      triggerSecurityError(`Error al procesar el archivo: ${e.message}`);
+    } finally {
+      setIsProcessing(false);
+      setIsProcessingText(undefined);
     }
-    // 3. HTML tag check (reject web files)
-    const htmlRegex = /<!DOCTYPE\s+html|<html|<head|<body/i;
-    if (htmlRegex.test(fileText)) {
-      triggerSecurityError('El archivo contiene etiquetas HTML no permitidas (posible archivo web malicioso o inválido).');
-      return;
-    }
-    setRawCSVText(fileText);
-    setFileName(name);
-    setIsSampleData(false);
-    const result = parseCSV(fileText);
-    setCsvHeaders(result.headers);
-    setParsedRows(result.rows);
-    const preview = result.rows.slice(0, 20).map(row => 
-      result.headers.map(h => row[h] || '')
-    );
-    setCsvLinesPreview(preview);
-    const emptyMapping: ColumnMapping = {
-      idColumn: '',
-      xColumn: '',
-      yColumn: '',
-      zColumn: '',
-    };
-    setAutoMapping(emptyMapping);
-    setWorkflowState('FILE_SELECTED');
-    setActiveView('FILE_SELECTED');
   };
 
   const handleConfirmMapping = (mapping: ColumnMapping) => {
@@ -488,7 +628,7 @@ export default function TerrenoLabPage() {
     const qaRes = performTopographicQA(valResult.validPoints);
     setQaResult(qaRes);
     const newDataset: TerrainDataset = {
-      name: fileName,
+      name: sanitizeFilename(fileName),
       points: valResult.validPoints,
       source: isSampleData ? 'sample' : 'csv',
       createdAt: new Date().toISOString(),
@@ -500,6 +640,8 @@ export default function TerrenoLabPage() {
     setContoursResult(null); // Reset computed contours
     setPolygon([]); // Reset volume polygon
     setVolumeResult(null); // Reset volume result
+    setMaterialLayers(DEFAULT_MATERIAL_LAYERS); // Reset material layers
+
 
     if (valResult.isValid && qaRes.quality.canReview) {
       setWorkflowState('VALIDATED');
@@ -530,15 +672,33 @@ export default function TerrenoLabPage() {
     setActiveView('VOLUME_READY');
   };
 
+  const handleSkipContours = () => {
+    setSkippedContours(true);
+    setWorkflowState('VOLUME_READY');
+    setActiveView('VOLUME_READY');
+  };
+
   const handleProceedFromVolume = () => {
-    if (volumeQA && volumeQA.blockers.length === 0) {
+    if (
+      skippedVolume ||
+      (volumeQA && volumeQA.blockers.length === 0 &&
+      (!materialLayersQA || materialLayersQA.blockers.length === 0))
+    ) {
       setWorkflowState('EXPORT_READY');
       setActiveView('EXPORT_READY');
     }
   };
 
+  const handleSkipVolume = () => {
+    setSkippedVolume(true);
+    setWorkflowState('EXPORT_READY');
+    setActiveView('EXPORT_READY');
+  };
+
+
   const handleGenerateSurface = () => {
     if (!dataset || dataset.points.length === 0) return;
+    setIsProcessingText('Generando superficie...');
     setIsProcessing(true);
     setTimeout(() => {
       try {
@@ -556,12 +716,14 @@ export default function TerrenoLabPage() {
         console.error('Error generating surface:', err);
       } finally {
         setIsProcessing(false);
+        setIsProcessingText(undefined);
       }
     }, 100);
   };
 
   const handleGenerateContours = (interval: number, includeIndex: boolean, every: number) => {
     if (!surface) return;
+    setIsProcessingText('Generando curvas...');
     setIsProcessingContours(true);
     setTimeout(() => {
       try {
@@ -575,6 +737,7 @@ export default function TerrenoLabPage() {
         console.error('Error generating contours:', err);
       } finally {
         setIsProcessingContours(false);
+        setIsProcessingText(undefined);
       }
     }, 100);
   };
@@ -594,6 +757,7 @@ export default function TerrenoLabPage() {
     setSurfaceQA(null);
     setContoursResult(null);
     setIsProcessing(false);
+    setIsProcessingText(undefined);
     setIsProcessingContours(false);
     setResolution('medium');
     setPower(2.0);
@@ -603,6 +767,8 @@ export default function TerrenoLabPage() {
     setShowPoints(true);
     setShowGrid(true);
     setShowContours(true);
+    setSkippedContours(false);
+    setSkippedVolume(false);
     setExportStatus('idle');
     setIsExporting(false);
     setLastExportTime(null);
@@ -631,6 +797,7 @@ export default function TerrenoLabPage() {
       fixedTransportCost: undefined,
     });
     setVolumeResult(null);
+    setMaterialLayers(DEFAULT_MATERIAL_LAYERS);
     setExportDXF(true);
     setExportGeoJSON(true);
   };
@@ -640,7 +807,9 @@ export default function TerrenoLabPage() {
       return;
     }
     const canInterp = qaResult?.quality?.canInterpolate ?? false;
-    const canExport = contourQA !== null && contourQA.blockers.length === 0 && volumeQA !== null && volumeQA.blockers.length === 0;
+    const canExport = contourQA !== null && contourQA.blockers.length === 0 && 
+                      (skippedVolume || (volumeQA !== null && volumeQA.blockers.length === 0 &&
+                      (!materialLayersQA || materialLayersQA.blockers.length === 0)));
     if (canTransition(workflowState, state, canInterp, canExport)) {
       setActiveView(state);
     }
@@ -700,7 +869,8 @@ export default function TerrenoLabPage() {
         return (
           <StartView
             onLoadSample={handleLoadSample}
-            onFileUpload={handleFileUpload}
+            onFileUpload={handleFileSelect}
+            isProcessingText={isProcessingText}
           />
         );
       case 'FILE_SELECTED':
@@ -767,6 +937,7 @@ export default function TerrenoLabPage() {
             isProcessing={isProcessingContours}
             onGenerateContours={handleGenerateContours}
             onProceed={handleProceedFromContours}
+            onSkipContours={handleSkipContours}
             contourInterval={contourInterval}
             setContourInterval={setContourInterval}
             includeIndexContours={includeIndexContours}
@@ -800,6 +971,13 @@ export default function TerrenoLabPage() {
             volumeAudit={volumeAudit}
             onProceed={handleProceedFromVolume}
             onReset={handleReset}
+            onSkipVolume={handleSkipVolume}
+            materialLayers={materialLayers}
+            onMaterialLayersChange={setMaterialLayers}
+            materialLayersResult={materialLayersResult}
+            materialLayersQA={materialLayersQA}
+            polygonMode={polygonMode}
+            setPolygonMode={setPolygonMode}
           />
         );
       case 'EXPORT_READY':
@@ -841,13 +1019,19 @@ export default function TerrenoLabPage() {
             volumeResult={volumeResult}
             volumeQA={volumeQA}
             volumeAudit={volumeAudit}
+            materialLayers={materialLayers}
+            materialLayersResult={materialLayersResult}
+            materialLayersQA={materialLayersQA}
+            skippedContours={skippedContours}
+            skippedVolume={skippedVolume}
           />
         );
       default:
         return (
           <StartView
             onLoadSample={handleLoadSample}
-            onFileUpload={handleFileUpload}
+            onFileUpload={handleFileSelect}
+            isProcessingText={isProcessingText}
           />
         );
     }
@@ -901,6 +1085,14 @@ export default function TerrenoLabPage() {
       volumeResult={volumeResult}
       volumeQA={volumeQA}
       volumeAudit={volumeAudit}
+      materialLayers={materialLayers}
+      onMaterialLayersChange={setMaterialLayers}
+      materialLayersResult={materialLayersResult}
+      materialLayersQA={materialLayersQA}
+      polygonMode={polygonMode}
+      lastPolygonEditTime={lastPolygonEditTime}
+      skippedVolume={skippedVolume}
+      skippedContours={skippedContours}
     >
       {renderActiveView()}
     </AppShell>

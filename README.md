@@ -1,123 +1,87 @@
-# TerrenoLab
+# TerrenoLab MVP
 
 Workspace técnico para transformar datos topográficos en interpretación visual y decisiones preliminares.
 
-## Descripción del Proyecto
+---
 
-TerrenoLab es una herramienta **2D-First** monolítica y local diseñada específicamente para el procesamiento de levantamientos topográficos (nubes de puntos), generación de superficies mediante grillas de interpolación y segmentación de curvas de nivel exportables a CAD y SIG.
+## 1. ¿Qué es TerrenoLab?
 
-No es un dashboard de propósito general, un CAD pesado, ni una landing page administrativa. Prioriza los datos limpios y la toma de decisiones basada en geometría.
+TerrenoLab es una alpha técnica para análisis topográfico preliminar desde archivos CSV y DEM/GeoTIFF. Permite validar puntos, generar superficies IDW, curvas de nivel, estimar corte/relleno, configurar materiales por capas y exportar resultados técnicos.
 
-## Stack Inicial (Fase 0)
+Este workspace prioriza los datos limpios y la toma de decisiones basada en geometría, evitando stubs pesados de CAD o sobrecarga de frameworks administrativos.
 
-- **Framework**: Next.js (App Router)
-- **Lenguaje**: TypeScript
-- **Estilos**: Tailwind CSS
-- **Librería**: React
-- **Lógica**: Módulos matemáticos puros escritos en TypeScript independiente del framework de UI.
-- **Rendimiento**: Renderizado basado en Canvas HTML5 para soportar nubes de puntos pesadas.
+> [!WARNING]
+> **Advertencia Importante:** TerrenoLab entrega estimaciones preliminares. No reemplaza un levantamiento topográfico profesional, estudio geotécnico ni diseño de ingeniería.
 
 ---
 
-## Estructura de Directorios
+## 2. Estado del Proyecto y Privacidad
 
-```txt
-terrenolab/
-├── src/
-│   ├── app/
-│   │   ├── page.tsx
-│   │   └── globals.css
-│   │
-│   ├── components/
-│   │   ├── layout/
-│   │   │   ├── AppShell.tsx
-│   │   │   ├── Topbar.tsx
-│   │   │   ├── WorkflowSidebar.tsx
-│   │   │   └── InspectorPanel.tsx
-│   │   │
-│   │   ├── ui/
-│   │   │   ├── Button.tsx
-│   │   │   ├── Card.tsx
-│   │   │   ├── Badge.tsx
-│   │   │   ├── EmptyState.tsx
-│   │   │   ├── StatusChip.tsx
-│   │   │   └── DataMetric.tsx
-│   │   │
-│   │   └── viewers/
-│   │       ├── Terrain2DViewer.tsx
-│   │       ├── GridOverlay.tsx
-│   │       └── ElevationLegend.tsx
-│   │
-│   ├── features/
-│   │   ├── start/
-│   │   │   └── StartView.tsx
-│   │   ├── import/
-│   │   │   └── ImportView.tsx
-│   │   ├── validation/
-│   │   │   └── ValidationView.tsx
-│   │   ├── terrain/
-│   │   │   └── TerrainReviewView.tsx
-│   │   ├── surface/
-│   │   │   └── SurfaceView.tsx
-│   │   ├── contours/
-│   │   │   └── ContoursView.tsx
-│   │   └── export/
-│   │       └── ExportView.tsx
-│   │
-│   ├── domain/
-│   │   ├── terrain/
-│   │   │   ├── types.ts
-│   │   │   ├── validation.ts
-│   │   │   ├── metrics.ts
-│   │   │   ├── geometry.ts
-│   │   │   ├── interpolation.ts
-│   │   │   └── contours.ts
-│   │   │
-│   │   └── workflow/
-│   │       ├── workflowTypes.ts
-│   │       └── workflowState.ts
-│   │
-│   ├── lib/
-│   │   ├── csv/
-│   │   │   └── csvParser.ts
-│   │   ├── export/
-│   │   │   └── exportUtils.ts
-│   │   └── sampleData/
-│   │       └── sampleTerrain.ts
-│   │
-│   └── styles/
-│       └── tokens.ts
-│
-├── data_samples/
-│   ├── README.md
-│   └── terreno_prueba.csv
-│
-├── docs/
-│   ├── architecture.md
-│   ├── product-principles.md
-│   ├── roadmap.md
-│   └── mvp-status.md
-│
-├── package.json
-└── README.md
-```
+*   **Estado actual:** MVP / Alpha técnica.
+*   **Privacidad de Datos:** En esta versión, los archivos se procesan localmente en el navegador. No se suben a servidor ni se almacenan permanentemente. Si se cierra la página, el análisis puede perderse salvo que el usuario exporte resultados.
+*   **Seguridad:** TerrenoLab procesa archivos localmente en el navegador y aplica límites de tamaño y validaciones para evitar archivos corruptos o excesivamente pesados.
 
 ---
 
-## Comandos del Proyecto
+## 3. Funciones Actuales
 
-### Iniciar Servidor de Desarrollo
-```bash
-npm run dev
-```
-Abre [http://localhost:3000](http://localhost:3000) en su navegador para explorar la interfaz interactiva.
+*   **Ingesta de Datos:** Lector real de archivos CSV de texto plano y mapeador interactivo.
+*   **Importación Raster:** Procesamiento local de archivos de elevación DEM (TIF, TIFF, GeoTIFF) con extracción y muestreo automatizado de puntos 3D.
+*   **Control de Calidad (QA):** Filtros automáticos, detección de CRS, bloqueo de modelos hillshade/derivados y advertencias de metadatos faltantes.
+*   **Visor 2D:** Visualizador rápido de la nube de puntos y la geometría.
+*   **Superficie IDW:** Generador interactivo de mallas interpoladas por Distancia Inversa Ponderada (IDW) con resoluciones adaptables.
+*   **Curvas de Nivel Reales:** Trazado de isolíneas maestras e intermedias mediante el algoritmo de *Marching Squares*. Posibilidad de omitir el proceso.
+*   **Volumen de Corte/Relleno:** Cubicaciones geométricas sobre un polígono delimitado, con ajuste de compactación y pérdidas. Posibilidad de omitir el proceso.
+*   **Materiales por Capas:** Reparto volumétrico del relleno sobre capas iterables de materiales y cálculo de presupuestos base.
+*   **Exportación Multiformato:** Descarga de puntos (CSV), diagnóstico visual (PNG), metadata (JSON técnico), vectores de curvas (DXF, GeoJSON) y planillas de costos (CSV de materiales).
+*   **Límites Inteligentes:** Submuestreo de raster limitados a 20,000 puntos en navegador (límite archivo DEM a 100MB; CSV a 10MB) protegiendo el performance del dispositivo cliente.
 
-### Construir para Producción (Verificación)
-```bash
-npm run build
-```
+---
 
-### Ejecutar Linter
-```bash
-npm run lint
-```
+## 4. Limitaciones del MVP
+
+*   No incluye visualización ni renderizado 3D real de la malla, ni reposición topográfica.
+*   No incluye geolocalización por GPS ni visualización sobre cartografía activa de Google Maps o reproyección en el vuelo.
+*   No cuenta con autenticación, base de datos persistente (PostGIS) ni backend en servidor (toda la sesión depende del caché local de la ventana activa).
+
+---
+
+## 5. Instalación y Uso Local
+
+### Requisitos Previos
+
+*   Node.js (versión 18 o superior recomendada)
+*   npm (o yarn)
+
+### Ejecutar Localmente
+
+1. Instalar las dependencias del proyecto:
+   ```bash
+   npm install
+   ```
+
+2. Iniciar el servidor de desarrollo local:
+   ```bash
+   npm run dev
+   ```
+   Abre [http://localhost:3000](http://localhost:3000) en el navegador para comenzar.
+
+3. Construir la versión de producción optimizada:
+   ```bash
+   npm run build
+   ```
+
+4. Ejecutar el servidor con el bundle de producción compilado:
+   ```bash
+   npm run start
+   ```
+
+---
+
+## 6. Despliegue en Vercel
+
+Este proyecto está configurado para desplegarse de manera directa en Vercel sin dependencias de variables de entorno (no require backend):
+*   **Framework Preset:** Next.js
+*   **Build Command:** `npm run build`
+*   **Output Directory:** Automático (`.next` / Next.js predeterminado)
+*   **Directorio Raíz:** `./` (o `terrenolab/` si se sitúa en un subdirectorio).

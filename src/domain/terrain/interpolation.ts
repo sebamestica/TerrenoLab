@@ -1,4 +1,5 @@
 import { TerrainPoint } from './types';
+import { TERRAIN_LIMITS } from '../../config/limits';
 
 export interface GridCell {
   x: number;
@@ -82,10 +83,10 @@ export function generateIDWSurface(
     };
   }
 
-  let resolutionSize = 80;
-  if (options.resolution === 'low') resolutionSize = 40;
-  else if (options.resolution === 'medium') resolutionSize = 80;
-  else if (options.resolution === 'high') resolutionSize = 120;
+  let resolutionSize = TERRAIN_LIMITS.idwResolutions.medium;
+  if (options.resolution === 'low') resolutionSize = TERRAIN_LIMITS.idwResolutions.low;
+  else if (options.resolution === 'medium') resolutionSize = TERRAIN_LIMITS.idwResolutions.medium;
+  else if (options.resolution === 'high') resolutionSize = TERRAIN_LIMITS.idwResolutions.high;
 
   const cols = resolutionSize;
   const rows = resolutionSize;
@@ -203,7 +204,7 @@ export function interpolateSurfaceIDW(
   const cols = Math.max(2, Math.ceil(width / cellSize));
 
   const result = generateIDWSurface(points, {
-    resolution: cols <= 40 ? 'low' : cols <= 80 ? 'medium' : 'high',
+    resolution: cols <= TERRAIN_LIMITS.idwResolutions.low ? 'low' : cols <= TERRAIN_LIMITS.idwResolutions.medium ? 'medium' : 'high',
     power: params.power || 2.0
   });
 

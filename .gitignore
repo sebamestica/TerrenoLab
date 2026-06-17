@@ -43,3 +43,6 @@ next-env.d.ts
 # backups
 page.corrupted.backup.tsx
 page.corrupted.backup.txt
+
+# docs
+docs/

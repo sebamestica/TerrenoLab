@@ -10,7 +10,8 @@ export type InspectorStatus =
   | 'Estable'
   | 'Apto para interpolación'
   | 'Requiere revisión'
-  | 'Listo';
+  | 'Listo'
+  | 'Omitido';
 
 interface InspectorStatusBadgeProps {
   status: InspectorStatus;
@@ -34,6 +35,7 @@ export function InspectorStatusBadge({ status, className = '' }: InspectorStatus
       case 'Bloqueado':
         return 'bg-red-50 text-red-700 border-red-200';
       case 'Pendiente':
+      case 'Omitido':
       default:
         return 'bg-slate-50 text-slate-400 border-slate-200';
     }

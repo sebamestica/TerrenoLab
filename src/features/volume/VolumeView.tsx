@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { AreaChart, Eye, Spline, ShieldAlert, AlertTriangle, Play, RefreshCw, Trash2, ArrowLeft, Info } from 'lucide-react';
+import { AreaChart, Eye, Spline, ShieldAlert, AlertTriangle, Play, RefreshCw, Trash2, ArrowLeft, Info, X } from 'lucide-react';
 import { TerrainPoint, TerrainMetrics } from '../../domain/terrain/types';
 import { IDWSurfaceResult } from '../../domain/terrain/interpolation';
+import { TERRAIN_LIMITS } from '../../config/limits';
 import { VolumeOptions, VolumeResult, calculateCutFillVolume, isPointInPolygon } from '../../domain/terrain/volume';
 import { validateVolumeAnalysis, VolumeQAResult } from '../../domain/terrain/volumeQA';
 import { PolygonSelectionOverlay } from '../../components/viewers/PolygonSelectionOverlay';
@@ -9,6 +10,8 @@ import { GridOverlay } from '../../components/viewers/GridOverlay';
 import { Button } from '../../components/ui/Button';
 
 import { VolumeAuditResult } from '../../domain/terrain/volumeAudit';
+import { FillMaterialLayer, MaterialLayerResult } from '../../domain/terrain/materialLayers';
+import { MaterialLayersQAResult } from '../../domain/terrain/materialLayersQA';
 
 interface VolumeViewProps {
   points: TerrainPoint[];
@@ -25,7 +28,14 @@ interface VolumeViewProps {
   volumeAudit?: VolumeAuditResult | null;
   onProceed: () => void;
   onReset: () => void;
+  onSkipVolume?: () => void;
   hideLocalLayerControls?: boolean;
+  materialLayers: FillMaterialLayer[];
+  onMaterialLayersChange: (layers: FillMaterialLayer[]) => void;
+  materialLayersResult: MaterialLayerResult | null;
+  materialLayersQA: MaterialLayersQAResult | null;
+  polygonMode: 'drawing' | 'editing' | 'idle';
+  setPolygonMode: (mode: 'drawing' | 'editing' | 'idle') => void;
 }
 
 export function VolumeView({
@@ -43,12 +53,92 @@ export function VolumeView({
   volumeAudit,
   onProceed,
   onReset,
+  onSkipVolume,
   hideLocalLayerControls = false,
+  materialLayers,
+  onMaterialLayersChange,
+  materialLayersResult,
+  materialLayersQA,
+  polygonMode,
+  setPolygonMode,
 }: VolumeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
-  const [polygonMode, setPolygonMode] = useState<'drawing' | 'editing' | 'idle'>('idle');
+
+  type NoticeType = 'info' | 'success' | 'warning' | 'error';
+  interface Notice {
+    id: string;
+    type: NoticeType;
+    message: string | React.ReactNode;
+  }
+  const [notices, setNotices] = useState<Notice[]>([]);
+
+  const addNotice = React.useCallback((type: NoticeType, message: string | React.ReactNode) => {
+    const id = crypto.randomUUID();
+    
+    setNotices(prev => {
+      // Prevent duplicates by checking string representation if possible, or just skip if it's node (for simplicity, we assume text messages are common)
+      if (typeof message === 'string' && prev.some(n => n.message === message)) {
+        return prev;
+      }
+      return [...prev, { id, type, message }];
+    });
+
+    let duration = 0;
+    if (type === 'info') duration = 3500;
+    if (type === 'success') duration = 4000;
+    if (type === 'warning') duration = 6000;
+
+    if (duration > 0) {
+      setTimeout(() => {
+        setNotices(prev => prev.filter(n => n.id !== id));
+      }, duration);
+    }
+  }, []);
+
+  const removeNotice = React.useCallback((id: string) => {
+    setNotices(prev => prev.filter(n => n.id !== id));
+  }, []);
+
+  const handleAddLayer = () => {
+    onMaterialLayersChange([
+      ...materialLayers,
+      {
+        id: crypto.randomUUID(),
+        name: 'Nuevo Material',
+        fromThickness: 0,
+        toThickness: 0.2,
+        color: 'gris',
+        compactionFactor: 1.2,
+        wasteFactor: 1.05
+      }
+    ]);
+  };
+
+  const handleLayerFieldChange = (id: string, field: keyof FillMaterialLayer, value: any) => {
+    onMaterialLayersChange(materialLayers.map(l => {
+      if (l.id === id) {
+        return { ...l, [field]: (field === 'fromThickness' || field === 'toThickness' || field === 'pricePerM3' || field === 'compactionFactor' || field === 'wasteFactor') ? (value === '' ? undefined : parseFloat(value)) : value };
+      }
+      return l;
+    }));
+  };
+
+  const handleDeleteLayer = (id: string) => {
+    onMaterialLayersChange(materialLayers.filter(l => l.id !== id));
+  };
+
+  const getColorHex = (colorName: string) => {
+    const colors: Record<string, string> = {
+      'gris': '#94A3B8',
+      'café': '#A16207',
+      'verde': '#16A34A',
+      'azul': '#0284C7',
+      'rojo': '#DC2626'
+    };
+    return colors[colorName.toLowerCase()] || '#94A3B8';
+  };
 
   // Resize observer for dynamic canvas scaling
   useEffect(() => {
@@ -71,15 +161,6 @@ export function VolumeView({
     return validateVolumeAnalysis(surface, polygon, volumeOptions, selectedCRS, metrics);
   }, [surface, polygon, volumeOptions, selectedCRS, metrics]);
 
-  const isNoPolygon = polygon.length === 0;
-  const isIncompletePolygon = polygon.length > 0 && polygon.length < 3;
-  const criticalBlocker = qa.blockers.find(
-    (b) =>
-      b !== 'No se ha dibujado ningún polígono de análisis.' &&
-      b !== 'El polígono de análisis está incompleto: requiere al menos 3 vértices.'
-  ) || (volumeAudit && volumeAudit.blockers[0]);
-  const hasCriticalBlockers = !!criticalBlocker && !isNoPolygon && !isIncompletePolygon;
-
   // Trigger volume calculation reactively
   useEffect(() => {
     if (surface && polygon.length >= 3 && qa.isValid) {
@@ -89,6 +170,37 @@ export function VolumeView({
       setVolumeResult(null);
     }
   }, [surface, polygon, volumeOptions, qa.isValid, setVolumeResult]);
+
+  // Alert Effect Triggers (using primitives)
+  const isNoPolygon = polygon.length === 0;
+  const isIncompletePolygon = polygon.length > 0 && polygon.length < 3;
+  const criticalBlocker = qa.blockers.find(
+    (b) =>
+      b !== 'No se ha dibujado ningún polígono de análisis.' &&
+      b !== 'El polígono de análisis está incompleto: requiere al menos 3 vértices.'
+  ) || (volumeAudit && volumeAudit.blockers[0]);
+  const hasCriticalBlockers = !!criticalBlocker && !isNoPolygon && !isIncompletePolygon;
+
+  const warningCount = qa.warnings.length;
+  const auditWarningCount = volumeAudit?.warnings.length || 0;
+
+  useEffect(() => {
+    if (isNoPolygon) {
+      addNotice('info', 'Dibuje un polígono de análisis para calcular corte y relleno. Use "Agregar polígono" y marque al menos 3 vértices.');
+    }
+  }, [isNoPolygon, addNotice]);
+
+  useEffect(() => {
+    if (isIncompletePolygon) {
+      addNotice('warning', 'Agregue al menos 3 vértices para poder realizar la cubicación.');
+    }
+  }, [isIncompletePolygon, addNotice]);
+
+  useEffect(() => {
+    if (warningCount > 0 || auditWarningCount > 0) {
+      addNotice('warning', 'Hay advertencias de calidad en la cubicación. Revise la leyenda inferior.');
+    }
+  }, [warningCount, auditWarningCount, addNotice]);
 
   // Smooth elevation color ramp mapping
   const getZColorSmooth = (z: number, minZ: number, maxZ: number, alpha = 0.85) => {
@@ -401,47 +513,60 @@ export function VolumeView({
           </div>
         )}
 
-        {/* Display warnings callout directly on the map viewport */}
-        {(qa.warnings.length > 0 || (volumeAudit && volumeAudit.warnings.length > 0)) && (
-          <div className="absolute top-4 left-4 right-4 max-w-md bg-[#FFFBEB]/95 border border-[#F59E0B]/35 rounded p-3 shadow-md flex items-start gap-2 backdrop-blur-sm">
-            <AlertTriangle className="text-[#D97706] shrink-0 mt-0.5" size={15} />
-            <div className="space-y-0.5 text-[12px] leading-relaxed text-[#92400E]">
-              <span className="font-semibold block">Aviso preliminar:</span>
-              <ul className="list-disc list-inside space-y-0.5">
-                {qa.warnings.map((w, idx) => (
-                  <li key={`qa-${idx}`}>{w}</li>
-                ))}
-                {volumeAudit && volumeAudit.warnings.map((w, idx) => (
-                  <li key={`audit-${idx}`}>{w}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        )}
+        {/* Notice Area (Non-blocking, top right) */}
+        <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 w-80 pointer-events-none">
+          {notices.map(notice => {
+            let bgClass = '';
+            let icon = null;
+            if (notice.type === 'info') {
+              bgClass = 'bg-cyan-50/95 border-cyan-200 text-cyan-800';
+              icon = <Info size={16} className="text-cyan-600 shrink-0 mt-0.5" />;
+            } else if (notice.type === 'success') {
+              bgClass = 'bg-green-50/95 border-green-200 text-green-800';
+              icon = <RefreshCw size={16} className="text-green-600 shrink-0 mt-0.5" />;
+            } else if (notice.type === 'warning') {
+              bgClass = 'bg-amber-50/95 border-amber-200 text-amber-800';
+              icon = <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />;
+            } else if (notice.type === 'error') {
+              bgClass = 'bg-red-50/95 border-red-200 text-red-800';
+              icon = <ShieldAlert size={16} className="text-red-600 shrink-0 mt-0.5" />;
+            }
 
-        {/* Informative banners for no polygon or incomplete polygon */}
-        {isNoPolygon && (
-          <div className="absolute top-4 left-4 right-4 bg-cyan-50/95 border border-cyan-200 text-cyan-800 p-3 rounded shadow-md text-[12.5px] flex items-center gap-2 backdrop-blur-sm z-20 font-sans">
-            <Info size={16} className="text-cyan-600 shrink-0" />
-            <div className="flex-1">
-              <strong>Esperando polígono:</strong> Dibuje un polígono de análisis para calcular corte y relleno. Use "Agregar polígono" y marque al menos 3 vértices sobre el terreno.
-            </div>
-          </div>
-        )}
+            return (
+              <div key={notice.id} className={`pointer-events-auto border rounded shadow-md p-3 text-[12px] flex items-start gap-2 backdrop-blur-sm font-sans transition-all duration-300 ease-out ${bgClass}`}>
+                {icon}
+                <div className="flex-1 leading-relaxed">
+                  {notice.message}
+                </div>
+                <button 
+                  onClick={() => removeNotice(notice.id)}
+                  className="shrink-0 p-1 hover:bg-black/5 rounded opacity-60 hover:opacity-100 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
 
-        {isIncompletePolygon && (
-          <div className="absolute top-4 left-4 right-4 bg-amber-50/95 border border-amber-200 text-amber-800 p-3 rounded shadow-md text-[12.5px] flex items-center gap-2 backdrop-blur-sm z-20 font-sans">
-            <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-            <div className="flex-1">
-              <strong>Polígono incompleto:</strong> Agregue al menos 3 vértices para poder realizar la cubicación.
-            </div>
-          </div>
-        )}
-
-        {/* Blockers block directly on viewport */}
+        {/* Blockers rendered as regular notice in the center (non-blocking overlay) */}
         {hasCriticalBlockers && (
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-6 select-none pointer-events-auto z-20">
-            <div className="bg-white border border-[#EF4444]/20 rounded-lg p-5 max-w-md shadow-xl text-center space-y-3 font-sans">
+          <div className="absolute inset-0 flex items-center justify-center p-6 select-none pointer-events-none z-20">
+            <div className="bg-white border border-[#EF4444]/20 rounded-lg p-5 max-w-md shadow-xl text-center space-y-3 font-sans pointer-events-auto relative">
+              {/* Max Polygon Vertices Warning */}
+              {polygon.length > TERRAIN_LIMITS.maxPolygonVertices && (
+                <div className={`border rounded p-3 mb-2 flex items-start gap-3 ${isDark ? 'bg-amber-950/90 border-amber-900 text-amber-200' : 'bg-amber-50/95 border-amber-200 text-amber-900'}`}>
+                  <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={17} />
+                  <div className="space-y-0.5 flex-1 text-left">
+                    <span className="font-bold text-[12.5px] block leading-tight">Polígono masivo</span>
+                    <span className={`text-[11px] leading-snug block ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                      El polígono tiene demasiados vértices ({polygon.length} / {TERRAIN_LIMITS.maxPolygonVertices}) para una cubicación fluida en tiempo real.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Hero Status Alert */}
               <ShieldAlert className="text-[#EF4444] mx-auto" size={32} />
               <h3 className="text-[14px] font-bold text-slate-800">
                 Análisis Volumétrico Bloqueado
@@ -494,6 +619,217 @@ export function VolumeView({
         </div>
       )}
 
+      {/* Sección Materiales por Capas */}
+      {volumeResult && (
+        <div className={`flex-1 overflow-y-auto p-6 space-y-4 bg-white border-t border-slate-200`}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-[14px] font-bold text-slate-800 flex items-center gap-1.5 font-sans">
+              <AreaChart size={16} className="text-[#0891B2]" />
+              Materiales por Capas de Relleno
+            </h3>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                onClick={handleAddLayer}
+                className="text-[12px] py-1 font-semibold"
+              >
+                Agregar material
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {}}
+                className="text-[12px] py-1 font-semibold text-slate-500 cursor-default"
+                title="Los cálculos se actualizan automáticamente de forma reactiva."
+              >
+                <RefreshCw size={12} className="mr-1.5 animate-spin-slow" />
+                Recalcular (Auto)
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto border border-slate-200 rounded">
+            <table className="w-full text-left border-collapse text-[12px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold font-sans">
+                  <th className="p-2.5">Material</th>
+                  <th className="p-2.5 w-20">Desde (m)</th>
+                  <th className="p-2.5 w-20">Hasta (m)</th>
+                  <th className="p-2.5 w-28">Color</th>
+                  <th className="p-2.5 w-28">Precio/m³ ($)</th>
+                  <th className="p-2.5 w-20">Compact.</th>
+                  <th className="p-2.5 w-20">Pérdida</th>
+                  <th className="p-2.5 text-right w-24">Vol. Bruto</th>
+                  <th className="p-2.5 text-right w-24">Vol. Recom.</th>
+                  <th className="p-2.5 text-right w-28">Costo</th>
+                  <th className="p-2.5 text-center w-12">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {materialLayers.map((layer) => {
+                  const volData = materialLayersResult?.layers.find((l) => l.layerId === layer.id);
+                  const rawVol = volData ? volData.rawVolume : 0;
+                  const recomVol = volData ? volData.recommendedVolume : 0;
+                  const estCost = volData ? volData.estimatedCost : null;
+
+                  return (
+                    <tr key={layer.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                      <td className="p-2">
+                        <input
+                          type="text"
+                          value={layer.name}
+                          onChange={(e) => handleLayerFieldChange(layer.id, 'name', e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded p-1 text-[12px] text-slate-800 focus:outline-none focus:border-[#0891B2]"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0"
+                          value={layer.fromThickness}
+                          onChange={(e) => handleLayerFieldChange(layer.id, 'fromThickness', e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded p-1 text-[12px] text-slate-800 font-mono focus:outline-none focus:border-[#0891B2]"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0"
+                          value={layer.toThickness}
+                          onChange={(e) => handleLayerFieldChange(layer.id, 'toThickness', e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded p-1 text-[12px] text-slate-800 font-mono focus:outline-none focus:border-[#0891B2]"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-1.5">
+                          <div
+                            className="w-3.5 h-3.5 rounded-full shrink-0 border border-slate-300"
+                            style={{ backgroundColor: getColorHex(layer.color) }}
+                          />
+                          <select
+                            value={layer.color}
+                            onChange={(e) => handleLayerFieldChange(layer.id, 'color', e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded p-1 text-[12px] font-sans focus:outline-none focus:border-[#0891B2] cursor-pointer"
+                          >
+                            <option value="gris">Gris</option>
+                            <option value="café">Café</option>
+                            <option value="verde">Verde</option>
+                            <option value="azul">Azul</option>
+                            <option value="rojo">Rojo</option>
+                          </select>
+                        </div>
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          placeholder="Sin precio"
+                          min="0"
+                          value={layer.pricePerM3 === null || layer.pricePerM3 === undefined ? '' : layer.pricePerM3}
+                          onChange={(e) => handleLayerFieldChange(layer.id, 'pricePerM3', e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded p-1 text-[12px] text-slate-800 font-mono focus:outline-none focus:border-[#0891B2]"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.1"
+                          value={layer.compactionFactor}
+                          onChange={(e) => handleLayerFieldChange(layer.id, 'compactionFactor', e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded p-1 text-[12px] text-slate-800 font-mono focus:outline-none focus:border-[#0891B2]"
+                        />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.1"
+                          value={layer.wasteFactor}
+                          onChange={(e) => handleLayerFieldChange(layer.id, 'wasteFactor', e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded p-1 text-[12px] text-slate-800 font-mono focus:outline-none focus:border-[#0891B2]"
+                        />
+                      </td>
+                      <td className="p-2 text-right font-mono font-medium text-slate-600">
+                        {rawVol.toFixed(2)} m³
+                      </td>
+                      <td className="p-2 text-right font-mono font-bold text-slate-700">
+                        {recomVol.toFixed(2)} m³
+                      </td>
+                      <td className="p-2 text-right font-mono font-bold text-slate-800">
+                        {estCost !== null && estCost !== undefined ? (
+                          `$${estCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                        ) : (
+                          '---'
+                        )}
+                      </td>
+                      <td className="p-2 text-center">
+                        <button
+                          onClick={() => handleDeleteLayer(layer.id)}
+                          className="p-1 hover:bg-red-50 text-red-500 hover:text-red-700 rounded transition-colors"
+                          title="Eliminar material"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Resumen del Relleno por Capas */}
+          {materialLayersResult && (
+            <div className="grid grid-cols-4 gap-4 p-3.5 bg-slate-50 border border-slate-200 rounded font-sans">
+              <div>
+                <span className="text-slate-500 font-semibold block text-[10px] uppercase tracking-wider">Volumen Recomendado Compras</span>
+                <span className="text-[15px] font-bold text-[#0891B2] mt-0.5 block font-mono">
+                  {materialLayersResult.totalRecommendedVolume.toFixed(2)} m³
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 font-semibold block text-[10px] uppercase tracking-wider">Costo Estimado Materiales</span>
+                <span className="text-[15px] font-bold text-slate-800 mt-0.5 block font-mono">
+                  {materialLayersResult.totalEstimatedCost !== null ? (
+                    `$${materialLayersResult.totalEstimatedCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                  ) : (
+                    'null (Faltan precios)'
+                  )}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 font-semibold block text-[10px] uppercase tracking-wider">Volumen Relleno sin Asignar</span>
+                <span className={`text-[15px] font-bold mt-0.5 block font-mono ${materialLayersResult.unassignedFillVolume > 0.001 ? 'text-[#EF4444]' : 'text-slate-600'}`}>
+                  {materialLayersResult.unassignedFillVolume.toFixed(2)} m³
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 font-semibold block text-[10px] uppercase tracking-wider">Estado QA Capas</span>
+                <div className="mt-1">
+                  {materialLayersQA ? (
+                    materialLayersQA.blockers.length > 0 ? (
+                      <span className="px-2 py-0.5 text-[10.5px] bg-red-50 text-red-700 border border-red-200 rounded font-semibold uppercase tracking-wide">Bloqueado</span>
+                    ) : materialLayersQA.warnings.length > 0 ? (
+                      <span className="px-2 py-0.5 text-[10.5px] bg-amber-50 text-amber-700 border border-amber-200 rounded font-semibold uppercase tracking-wide">Advertencia</span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-[10.5px] bg-green-50 text-green-700 border border-green-200 rounded font-semibold uppercase tracking-wide">Apto</span>
+                    )
+                  ) : (
+                    <span className="text-slate-400 font-bold">---</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Advertencia obligatoria */}
+          <div className="bg-amber-50 border border-amber-200 rounded p-3 text-[11px] text-amber-900 leading-relaxed font-sans font-medium">
+            La configuración de materiales es preliminar y debe ser validada por un profesional competente. TerrenoLab no reemplaza estudio geotécnico, diseño de pavimentos ni especificación de compactación en obra.
+          </div>
+        </div>
+      )}
+
       {/* Disclaimers footer */}
       <div className={`px-6 py-4 border-t space-y-2 shrink-0 ${
         isDark ? 'bg-slate-950/40 border-slate-800 text-slate-400' : 'bg-slate-100/60 border-slate-200 text-slate-500'
@@ -506,31 +842,42 @@ export function VolumeView({
         </p>
       </div>
 
-      {/* Proceed step bar */}
       <div className={`px-6 py-3 border-t flex items-center justify-between shrink-0 ${
         isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
-        <Button variant="ghost" onClick={onReset} className="text-[13px]">
-          <ArrowLeft size={14} className="mr-1.5" />
-          Reiniciar
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={onReset} className="text-[13px]">
+            <ArrowLeft size={14} className="mr-1.5" />
+            Reiniciar
+          </Button>
+          {onSkipVolume && (
+            <Button
+              variant="secondary"
+              onClick={onSkipVolume}
+              className="text-[13px] border-slate-300 text-slate-600 hover:bg-slate-50 border"
+            >
+              Omitir Cálculo y Exportar
+            </Button>
+          )}
+        </div>
         <Button
           variant="primary"
           onClick={onProceed}
           disabled={
             volumeResult === null ||
             qa.blockers.length > 0 ||
-            (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid)
+            (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid) ||
+            (materialLayersQA !== null && materialLayersQA !== undefined && materialLayersQA.blockers.length > 0)
           }
           className="px-5 py-2 font-semibold shadow-sm text-[12.5px]"
           title={
-            (volumeResult === null || qa.blockers.length > 0 || (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid))
-              ? "Complete el análisis de volumen para exportar."
+            (volumeResult === null || qa.blockers.length > 0 || (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid) || (materialLayersQA !== null && materialLayersQA !== undefined && materialLayersQA.blockers.length > 0))
+              ? "Resuelva los errores de volumen y materiales, o presione Omitir."
               : undefined
           }
         >
           <Play size={14} className="mr-1.5" />
-          {(volumeResult === null || qa.blockers.length > 0 || (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid))
+          {(volumeResult === null || qa.blockers.length > 0 || (volumeAudit !== null && volumeAudit !== undefined && !volumeAudit.isValid) || (materialLayersQA !== null && materialLayersQA !== undefined && materialLayersQA.blockers.length > 0))
             ? "Complete el análisis de volumen para exportar."
             : "Proceder a Exportar"
           }

@@ -33,6 +33,12 @@ import { VolumeOptions, VolumeResult } from '../../domain/terrain/volume';
 import { VolumeQAResult } from '../../domain/terrain/volumeQA';
 import { VolumeAuditResult } from '../../domain/terrain/volumeAudit';
 
+// Material Layers
+import { FillMaterialLayer, MaterialLayerResult } from '../../domain/terrain/materialLayers';
+import { MaterialLayersQAResult } from '../../domain/terrain/materialLayersQA';
+import { TERRAIN_LIMITS } from '../../config/limits';
+
+
 export type ExportStatus = 'idle' | 'exporting' | 'completed' | 'error';
 
 interface ExportViewProps {
@@ -80,6 +86,11 @@ interface ExportViewProps {
   volumeResult?: VolumeResult | null;
   volumeQA?: VolumeQAResult | null;
   volumeAudit?: VolumeAuditResult | null;
+  materialLayers?: FillMaterialLayer[];
+  materialLayersResult?: MaterialLayerResult | null;
+  materialLayersQA?: MaterialLayersQAResult | null;
+  skippedContours?: boolean;
+  skippedVolume?: boolean;
 }
 
 const getCRSLabelAndEPSG = (crs: string) => {
@@ -185,9 +196,15 @@ export function ExportView({
   volumeResult,
   volumeQA,
   volumeAudit,
+  materialLayers,
+  materialLayersResult,
+  materialLayersQA,
+  skippedContours = false,
+  skippedVolume = false,
 }: ExportViewProps) {
   // Reference for offscreen viewer canvas capture
   const hiddenContainerRef = useRef<HTMLDivElement | null>(null);
+  const [exportMaterialsCSV, setExportMaterialsCSV] = useState<boolean>(true);
 
   // Checks for technical warnings
   const hasWarnings = 
@@ -197,11 +214,34 @@ export function ExportView({
   // Generates the technical JSON metadata summary
   const generateTechnicalJSON = () => {
     return {
+      workflow: {
+        skippedContours,
+        skippedVolume,
+      },
       project: {
         name: dataset?.name || 'terrenolab_proyecto',
         createdAt: dataset?.createdAt || new Date().toISOString(),
         source: dataset?.source || 'csv',
       },
+      ...(dataset?.source === 'dem' && dataset?.demMetadata ? {
+        source: {
+          type: 'DEM',
+          format: dataset.demMetadata.sourceFormat,
+          originalCellCount: dataset.demMetadata.originalCellCount,
+          sampledPointCount: dataset.demMetadata.sampledPointCount,
+          samplingStep: dataset.demMetadata.samplingStep,
+          processedLocally: true
+        },
+        ...(validation?.demQA ? {
+          demQA: {
+            label: validation.demQA.label,
+            score: validation.demQA.score,
+            warnings: validation.demQA.warnings,
+            blockers: validation.demQA.blockers,
+            diagnostics: validation.demQA.diagnostics
+          }
+        } : {})
+      } : {}),
       dataset: {
         pointCount: points.length,
         validRows: validation?.summary.validRows ?? points.length,
@@ -288,10 +328,33 @@ export function ExportView({
           areaCoverageRatio: volumeAudit.areaCoverageRatio,
           fillCutBalanceCheck: volumeAudit.fillCutBalanceCheck,
           estimatedResolution: volumeAudit.estimatedResolution
-        } : null
+        } : null,
+        materialLayers: {
+          enabled: true,
+          totalRawFillVolume: materialLayersResult ? materialLayersResult.totalRawFillVolume : 0,
+          totalRecommendedVolume: materialLayersResult ? materialLayersResult.totalRecommendedVolume : 0,
+          totalEstimatedCost: materialLayersResult ? materialLayersResult.totalEstimatedCost : null,
+          unassignedFillVolume: materialLayersResult ? materialLayersResult.unassignedFillVolume : 0,
+          layers: materialLayersResult ? materialLayersResult.layers.map((l) => ({
+            layerId: l.layerId,
+            name: l.name,
+            color: l.color,
+            fromThickness: l.fromThickness,
+            toThickness: l.toThickness,
+            rawVolume: l.rawVolume,
+            recommendedVolume: l.recommendedVolume,
+            pricePerM3: l.pricePerM3 ?? null,
+            estimatedCost: l.estimatedCost ?? null,
+          })) : [],
+          qa: {
+            isValid: materialLayersQA ? materialLayersQA.isValid : true,
+            warnings: materialLayersQA ? materialLayersQA.warnings : [],
+            blockers: materialLayersQA ? materialLayersQA.blockers : []
+          }
+        }
       } : null,
       generatedBy: 'TerrenoLab',
-      version: 'MVP-Phase-7.1',
+      version: 'MVP-Phase-8',
     };
   };
 
@@ -345,7 +408,7 @@ export function ExportView({
 
   // Perform multiple file exports sequentially
   const handleExportAll = async () => {
-    if (!exportCSV && !exportPNG && !exportJSON && !exportDXF && !exportGeoJSON) return;
+    if (!exportCSV && !exportPNG && !exportJSON && !exportDXF && !exportGeoJSON && !exportMaterialsCSV) return;
     
     const isCSVValid = validateCleanCSVExport(points, exportToCSV(points)).isValid;
     const isJSONValid = validateJSONExport(generateTechnicalJSON()).isValid;
@@ -358,6 +421,7 @@ export function ExportView({
     if (exportJSON && !isJSONValid) return;
     if (exportDXF && !isDXFValid) return;
     if (exportGeoJSON && !isGeoJSONValid) return;
+    if (exportMaterialsCSV && !isMaterialsCSVValid) return;
 
     setIsExporting(true);
     setExportStatus('exporting');
@@ -413,6 +477,17 @@ export function ExportView({
         if (exportGeoJSON && contoursResult) {
           const geojsonText = exportContoursToGeoJSON(contoursResult.lines, selectedCRS, contoursResult.interval);
           downloadFile(geojsonText, `${prefix}_curvas.geojson`, 'application/geo+json');
+        }
+
+        // 6. Export Materials CSV
+        if (exportMaterialsCSV && isMaterialsCSVValid && materialLayersResult) {
+          let csvText = 'material,desde_m,hasta_m,volumen_bruto_m3,volumen_recomendado_m3,precio_m3,costo_estimado\n';
+          materialLayersResult.layers.forEach((layer) => {
+            const priceVal = layer.pricePerM3 !== null && layer.pricePerM3 !== undefined ? layer.pricePerM3 : '';
+            const costVal = layer.estimatedCost !== null && layer.estimatedCost !== undefined ? layer.estimatedCost : '';
+            csvText += `"${layer.name}",${layer.fromThickness.toFixed(2)},${layer.toThickness.toFixed(2)},${layer.rawVolume.toFixed(3)},${layer.recommendedVolume.toFixed(3)},${priceVal},${costVal}\n`;
+          });
+          downloadFile(csvText, `${prefix}_resumen_materiales.csv`, 'text/csv');
         }
 
         setExportStatus('completed');
@@ -514,9 +589,11 @@ export function ExportView({
   const isDXFValid = !exportDXF || !contoursResult ? true : validateDXFExport(exportContoursToDXF(points, contoursResult.lines, selectedCRS)).isValid;
   const isGeoJSONValid = !exportGeoJSON || !contoursResult ? true : validateGeoJSONExport(exportContoursToGeoJSON(contoursResult.lines, selectedCRS, contoursResult.interval), selectedCRS === 'LOCAL').isValid;
 
+  const isMaterialsCSVValid = !!materialLayersResult && (!materialLayersQA || materialLayersQA.isValid);
+
   const isExportButtonDisabled = 
     isExporting || 
-    (!exportCSV && !exportPNG && !exportJSON && !exportDXF && !exportGeoJSON) ||
+    (!exportCSV && !exportPNG && !exportJSON && !exportDXF && !exportGeoJSON && (!exportMaterialsCSV || !isMaterialsCSVValid)) ||
     (exportCSV && !isCSVValid) ||
     (exportCSV && includeValidationErrors && !isErrorsCSVValid) ||
     (exportPNG && pngQA && !pngQA.isValid) ||
@@ -550,6 +627,21 @@ export function ExportView({
           Seleccione los archivos estructurados que desea descargar del análisis actual.
         </p>
       </div>
+
+      {/* Heavy Export Warning */}
+      {(points.length > 5000 || (contoursResult?.lines.length || 0) > 50) && (
+        <div className="bg-[#EFF6FF] border border-[#3B82F6]/20 rounded p-4 flex items-start gap-3">
+          <Info size={18} className="text-[#3B82F6] shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <h4 className="text-[13px] font-semibold text-[#1E3A8A]">
+              Exportación Pesada
+            </h4>
+            <p className="text-[12px] text-[#1E40AF] leading-relaxed">
+              La exportación puede ser pesada. Considere reducir resolución IDW o equidistancia de curvas si el navegador se congela.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Warnings Callout (Yellow) */}
       {hasWarnings && (
@@ -697,7 +789,7 @@ export function ExportView({
             <span className="text-[#334155] font-medium">DXF curvas:</span>
             {!contoursResult ? (
               <span className="px-2 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 rounded text-[11px] font-bold">
-                Sin curvas
+                {skippedContours ? 'Curvas omitidas' : 'Sin curvas'}
               </span>
             ) : isDXFValid ? (
               <span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-[11px] font-bold">
@@ -715,7 +807,7 @@ export function ExportView({
             <span className="text-[#334155] font-medium">GeoJSON curvas:</span>
             {!contoursResult ? (
               <span className="px-2 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 rounded text-[11px] font-bold">
-                Sin curvas
+                {skippedContours ? 'Curvas omitidas' : 'Sin curvas'}
               </span>
             ) : isGeoJSONValid ? (
               <span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded text-[11px] font-bold">
@@ -812,6 +904,29 @@ export function ExportView({
           <FileJson className={exportJSON ? 'text-[#0891B2]' : 'text-slate-300'} size={20} />
         </div>
 
+        {/* CSV Materiales Checkbox block */}
+        <div className="flex items-start justify-between p-3 border border-[#E2E8F0] rounded bg-slate-50/50">
+          <div className="flex gap-3">
+            <input
+              type="checkbox"
+              id="exportMaterialsCSVCheck"
+              checked={exportMaterialsCSV}
+              onChange={(e) => setExportMaterialsCSV(e.target.checked)}
+              disabled={!isMaterialsCSVValid}
+              className="accent-[#0891B2] rounded mt-1 cursor-pointer disabled:opacity-50"
+            />
+            <div>
+              <label htmlFor="exportMaterialsCSVCheck" className={`text-[13px] font-semibold block ${isMaterialsCSVValid ? 'text-[#0F172A] cursor-pointer' : 'text-slate-400'}`}>
+                {skippedVolume ? 'Volumen omitido' : (!volumeResult ? 'Sin volumen (CSV Materiales)' : 'CSV de resumen de materiales')}
+              </label>
+              <span className="text-[12px] text-[#64748B] block mt-0.5">
+                Volumen y costo estimado por cada capa de material de relleno.
+              </span>
+            </div>
+          </div>
+          <FileSpreadsheet className={exportMaterialsCSV && isMaterialsCSVValid ? 'text-[#0891B2]' : 'text-slate-300'} size={20} />
+        </div>
+
         {/* Formatos técnicos header */}
         <div className="pt-2 border-t border-slate-100 space-y-1">
           <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#64748B]">
@@ -835,7 +950,7 @@ export function ExportView({
             />
             <div>
               <label htmlFor="exportDXFCheck" className={`text-[13px] font-semibold block ${contoursResult ? 'text-[#0F172A] cursor-pointer' : 'text-slate-400'}`}>
-                DXF de curvas de nivel
+                {skippedContours ? 'DXF omitido' : 'DXF de curvas de nivel'}
               </label>
               <span className="text-[12px] text-[#64748B] block mt-0.5">
                 Isolíneas y nube de puntos para AutoCAD, Civil 3D y software CAD compatible.
@@ -858,7 +973,7 @@ export function ExportView({
             />
             <div>
               <label htmlFor="exportGeoJSONCheck" className={`text-[13px] font-semibold block ${contoursResult ? 'text-[#0F172A] cursor-pointer' : 'text-slate-400'}`}>
-                GeoJSON de curvas de nivel
+                {skippedContours ? 'GeoJSON omitido' : 'GeoJSON de curvas de nivel'}
               </label>
               <span className="text-[12px] text-[#64748B] block mt-0.5">
                 Curvas georreferenciadas con atributos (level, index, interval) para QGIS y software GIS.

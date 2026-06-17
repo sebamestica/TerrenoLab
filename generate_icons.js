@@ -1,0 +1,151 @@
+const fs = require('fs');
+const path = require('path');
+const sharp = require('sharp');
+
+const svgContentWithBg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    
+    <!-- Surface Gradient -->
+    <linearGradient id="surfaceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+
+    <!-- Base Gradient -->
+    <linearGradient id="baseGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#0891B2" stop-opacity="0.2" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Outer Ring (optional subtle tech ring) -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="#334155" stroke-width="3" stroke-dasharray="12 12" />
+
+  <g transform="translate(-76.8, -76.8) scale(1.3)">
+    <!-- Isometric Base (Subsurface) -->
+    <path d="M 256 380 L 120 300 L 120 340 L 256 420 L 392 340 L 392 300 Z" fill="url(#baseGrad)" />
+    <!-- Base Highlight -->
+    <path d="M 256 380 L 120 300 L 122 298 L 256 376 L 390 298 L 392 300 Z" fill="#22D3EE" opacity="0.5" />
+
+    <!-- Isometric Surface (Terrain Top) -->
+    <path d="M 256 160 L 392 240 L 340 270 L 290 250 L 256 280 L 200 250 L 160 270 L 120 240 Z" fill="url(#surfaceGrad)" stroke="#06B6D4" stroke-width="4" stroke-linejoin="round" />
+
+    <!-- Contour Lines on Surface -->
+    <path d="M 256 190 C 270 200, 290 210, 300 220 C 280 230, 260 220, 240 230 C 230 220, 240 200, 256 190 Z" fill="none" stroke="#06B6D4" stroke-width="2" opacity="0.8" />
+    <path d="M 256 175 C 290 195, 330 220, 350 235 C 320 255, 290 240, 256 260 C 220 240, 190 255, 160 235 C 180 220, 220 195, 256 175 Z" fill="none" stroke="#06B6D4" stroke-width="2" opacity="0.6" />
+    <path d="M 256 165 C 300 190, 360 225, 380 238 C 350 260, 310 245, 256 272 C 200 245, 160 260, 130 238 C 150 225, 210 190, 256 165 Z" fill="none" stroke="#06B6D4" stroke-width="2" opacity="0.4" />
+
+    <!-- Grid / Points Overlay -->
+    <circle cx="256" cy="190" r="4" fill="#22D3EE" />
+    <circle cx="300" cy="220" r="3" fill="#22D3EE" />
+    <circle cx="240" cy="230" r="3" fill="#22D3EE" />
+    <circle cx="350" cy="235" r="2.5" fill="#22D3EE" opacity="0.8" />
+    <circle cx="160" cy="235" r="2.5" fill="#22D3EE" opacity="0.8" />
+
+    <path d="M 256 190 L 300 220 L 350 235" fill="none" stroke="#22D3EE" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+    <path d="M 256 190 L 240 230 L 160 235" fill="none" stroke="#22D3EE" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+  </g>
+</svg>`;
+
+const svgContentTransparent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Surface Gradient -->
+    <linearGradient id="surfaceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+
+    <!-- Base Gradient -->
+    <linearGradient id="baseGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#0891B2" stop-opacity="0.2" />
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(-76.8, -76.8) scale(1.3)">
+    <!-- Isometric Base (Subsurface) -->
+    <path d="M 256 380 L 120 300 L 120 340 L 256 420 L 392 340 L 392 300 Z" fill="url(#baseGrad)" />
+    <!-- Base Highlight -->
+    <path d="M 256 380 L 120 300 L 122 298 L 256 376 L 390 298 L 392 300 Z" fill="#22D3EE" opacity="0.5" />
+
+    <!-- Isometric Surface (Terrain Top) -->
+    <path d="M 256 160 L 392 240 L 340 270 L 290 250 L 256 280 L 200 250 L 160 270 L 120 240 Z" fill="url(#surfaceGrad)" stroke="#06B6D4" stroke-width="4" stroke-linejoin="round" />
+
+    <!-- Contour Lines on Surface -->
+    <path d="M 256 190 C 270 200, 290 210, 300 220 C 280 230, 260 220, 240 230 C 230 220, 240 200, 256 190 Z" fill="none" stroke="#06B6D4" stroke-width="2" opacity="0.8" />
+    <path d="M 256 175 C 290 195, 330 220, 350 235 C 320 255, 290 240, 256 260 C 220 240, 190 255, 160 235 C 180 220, 220 195, 256 175 Z" fill="none" stroke="#06B6D4" stroke-width="2" opacity="0.6" />
+    <path d="M 256 165 C 300 190, 360 225, 380 238 C 350 260, 310 245, 256 272 C 200 245, 160 260, 130 238 C 150 225, 210 190, 256 165 Z" fill="none" stroke="#06B6D4" stroke-width="2" opacity="0.4" />
+
+    <!-- Grid / Points Overlay -->
+    <circle cx="256" cy="190" r="4" fill="#22D3EE" />
+    <circle cx="300" cy="220" r="3" fill="#22D3EE" />
+    <circle cx="240" cy="230" r="3" fill="#22D3EE" />
+    <circle cx="350" cy="235" r="2.5" fill="#22D3EE" opacity="0.8" />
+    <circle cx="160" cy="235" r="2.5" fill="#22D3EE" opacity="0.8" />
+
+    <path d="M 256 190 L 300 220 L 350 235" fill="none" stroke="#22D3EE" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+    <path d="M 256 190 L 240 230 L 160 235" fill="none" stroke="#22D3EE" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+  </g>
+</svg>`;
+
+async function main() {
+  const publicDir = path.join(__dirname, 'public');
+  if (!fs.existsSync(publicDir)) {
+    fs.mkdirSync(publicDir, { recursive: true });
+  }
+
+  // Write Transparent SVG for in-app UI
+  const svgPath = path.join(publicDir, 'terrenolab-icon.svg');
+  fs.writeFileSync(svgPath, svgContentTransparent);
+  console.log('Saved', svgPath);
+
+  // Generate PNGs using the one WITH background
+  const sizes = [192, 512, 180]; // 180 is for apple-touch-icon
+  for (const size of sizes) {
+    const filename = size === 180 ? 'apple-touch-icon.png' : `icon-${size}.png`;
+    const outPath = path.join(publicDir, filename);
+    await sharp(Buffer.from(svgContentWithBg))
+      .resize(size, size)
+      .png()
+      .toFile(outPath);
+    console.log('Saved', outPath);
+  }
+
+  // Generate favicon.ico (32x32) WITH background
+  const faviconPng = await sharp(Buffer.from(svgContentWithBg))
+    .resize(32, 32)
+    .png()
+    .toBuffer();
+
+  const icoBuffer = Buffer.alloc(22 + faviconPng.length);
+  // Header
+  icoBuffer.writeUInt16LE(0, 0); // reserved
+  icoBuffer.writeUInt16LE(1, 2); // type = 1 (ico)
+  icoBuffer.writeUInt16LE(1, 4); // image count
+  // Dir Entry
+  icoBuffer.writeUInt8(32, 6); // width
+  icoBuffer.writeUInt8(32, 7); // height
+  icoBuffer.writeUInt8(0, 8); // color count (0 = true color)
+  icoBuffer.writeUInt8(0, 9); // reserved
+  icoBuffer.writeUInt16LE(1, 10); // planes
+  icoBuffer.writeUInt16LE(32, 12); // bpp
+  icoBuffer.writeUInt32LE(faviconPng.length, 14); // image size
+  icoBuffer.writeUInt32LE(22, 18); // offset to image data
+  
+  // Image Data
+  faviconPng.copy(icoBuffer, 22);
+
+  const faviconPath = path.join(publicDir, 'favicon.ico');
+  fs.writeFileSync(faviconPath, icoBuffer);
+  console.log('Saved', faviconPath);
+}
+
+main().catch(console.error);

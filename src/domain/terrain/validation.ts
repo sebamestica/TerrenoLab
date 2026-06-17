@@ -1,4 +1,6 @@
 import { TerrainPoint } from './types';
+import { DEMMetadata } from '../../lib/dem/demTypes';
+import { DEMQAResult } from './demQA';
 
 export interface ColumnMapping {
   idColumn: string; // empty if none mapped
@@ -30,6 +32,8 @@ export interface ValidationResult {
     maxZ: number;
     deltaZ: number;
   };
+  demMetadata?: DEMMetadata;
+  demQA?: DEMQAResult;
 }
 
 /**
@@ -174,15 +178,28 @@ export function normalizeTerrainRows(
   const hasCriticalErrors = rejectedRows.some(e => e.rowNumber === 0 || e.message.includes('Mínimo') || e.message.includes('Falta'));
   const isValid = validPoints.length >= 3 && !hasCriticalErrors;
 
+  // Truncar lista de errores si es excesivamente grande
+  const maxErrorsToShow = 50;
+  const originalRejectedCount = rejectedRows.length;
+  let finalRejectedRows = rejectedRows;
+
+  if (finalRejectedRows.length > maxErrorsToShow) {
+    finalRejectedRows = finalRejectedRows.slice(0, maxErrorsToShow);
+    finalRejectedRows.push({
+      rowNumber: 0,
+      message: `Se han omitido ${originalRejectedCount - maxErrorsToShow} errores adicionales.`,
+    });
+  }
+
   return {
     isValid,
     validPoints,
-    rejectedRows,
+    rejectedRows: finalRejectedRows,
     warnings,
     summary: {
       totalRows,
       validRows: validPoints.length,
-      rejectedRows: rejectedRows.length,
+      rejectedRows: originalRejectedCount,
       duplicatedXY,
       minZ: validPoints.length > 0 ? minZ : 0,
       maxZ: validPoints.length > 0 ? maxZ : 0,

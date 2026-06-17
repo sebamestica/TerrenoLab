@@ -17,6 +17,11 @@ import { VolumeOptions, VolumeResult } from '../../domain/terrain/volume';
 import { VolumeQAResult } from '../../domain/terrain/volumeQA';
 import { VolumeAuditResult } from '../../domain/terrain/volumeAudit';
 
+// Material Layers
+import { FillMaterialLayer, MaterialLayerResult } from '../../domain/terrain/materialLayers';
+import { MaterialLayersQAResult } from '../../domain/terrain/materialLayersQA';
+
+
 interface AppShellProps {
   children: React.ReactNode;
   steps: WorkflowStep[];
@@ -57,6 +62,13 @@ interface AppShellProps {
   volumeResult?: VolumeResult | null;
   volumeQA?: VolumeQAResult | null;
   volumeAudit?: VolumeAuditResult | null;
+
+  // Material Layers Props
+  materialLayers?: FillMaterialLayer[];
+  onMaterialLayersChange?: (layers: FillMaterialLayer[]) => void;
+  materialLayersResult?: MaterialLayerResult | null;
+  materialLayersQA?: MaterialLayersQAResult | null;
+
   
   // Layer visibility controls
   showPoints?: boolean;
@@ -69,7 +81,13 @@ interface AppShellProps {
   // Contextual primary actions
   primaryActionLabel?: string;
   onPrimaryAction?: () => void;
+
+  polygonMode?: 'idle' | 'drawing' | 'editing';
+  lastPolygonEditTime?: string | null;
+  skippedVolume?: boolean;
+  skippedContours?: boolean;
 }
+
 
 export function AppShell({
   children,
@@ -119,6 +137,14 @@ export function AppShell({
   volumeResult,
   volumeQA,
   volumeAudit,
+  materialLayers,
+  onMaterialLayersChange,
+  materialLayersResult,
+  materialLayersQA,
+  polygonMode = 'idle',
+  lastPolygonEditTime = null,
+  skippedVolume = false,
+  skippedContours = false,
 }: AppShellProps) {
   return (
     <div className="h-screen w-screen flex flex-col bg-[#F8FAFC] text-[#0F172A] overflow-hidden font-sans">
@@ -152,10 +178,11 @@ export function AppShell({
                 </span>
                 
                 {/* Nube de puntos */}
-                <label className="flex items-center gap-1.5 cursor-pointer text-[#0F172A] font-medium">
+                <label key="show-points-label" className="flex items-center gap-1.5 cursor-pointer text-[#0F172A] font-medium">
                   <input
+                    key="show-points-checkbox"
                     type="checkbox"
-                    checked={!!showPoints}
+                    checked={showPoints === true}
                     onChange={(e) => setShowPoints?.(e.target.checked)}
                     className="accent-[#0891B2] rounded cursor-pointer"
                   />
@@ -164,36 +191,52 @@ export function AppShell({
 
                 {/* Superficie IDW */}
                 {surface !== null ? (
-                  <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer font-medium">
+                  <label key="show-grid-label-active" className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer font-medium">
                     <input
+                      key="show-grid-checkbox-active"
                       type="checkbox"
-                      checked={!!showGrid}
+                      checked={showGrid === true}
                       onChange={(e) => setShowGrid?.(e.target.checked)}
                       className="accent-[#0891B2] rounded cursor-pointer"
                     />
                     Superficie IDW
                   </label>
                 ) : (
-                  <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed font-medium" title="Superficie IDW no generada">
-                    <input type="checkbox" disabled className="rounded opacity-50 cursor-not-allowed" />
+                  <label key="show-grid-label-disabled" className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed font-medium" title="Superficie IDW no generada">
+                    <input
+                      key="show-grid-checkbox-disabled"
+                      type="checkbox"
+                      disabled
+                      checked={false}
+                      onChange={() => {}}
+                      className="rounded opacity-50 cursor-not-allowed"
+                    />
                     Superficie IDW no generada
                   </label>
                 )}
 
                 {/* Curvas de nivel */}
                 {contours !== null ? (
-                  <label className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer font-medium">
+                  <label key="show-contours-label-active" className="flex items-center gap-1.5 text-[#0F172A] cursor-pointer font-medium">
                     <input
+                      key="show-contours-checkbox-active"
                       type="checkbox"
-                      checked={!!showContours}
+                      checked={showContours === true}
                       onChange={(e) => setShowContours?.(e.target.checked)}
                       className="accent-[#0891B2] rounded cursor-pointer"
                     />
                     Curvas de nivel
                   </label>
                 ) : (
-                  <label className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed font-medium" title="Curvas no generadas">
-                    <input type="checkbox" disabled className="rounded opacity-50 cursor-not-allowed" />
+                  <label key="show-contours-label-disabled" className="flex items-center gap-1.5 text-[#94A3B8] cursor-not-allowed font-medium" title="Curvas no generadas">
+                    <input
+                      key="show-contours-checkbox-disabled"
+                      type="checkbox"
+                      disabled
+                      checked={false}
+                      onChange={() => {}}
+                      className="rounded opacity-50 cursor-not-allowed"
+                    />
                     Curvas no generadas
                   </label>
                 )}
@@ -250,6 +293,14 @@ export function AppShell({
           volumeResult={volumeResult}
           volumeQA={volumeQA}
           volumeAudit={volumeAudit}
+          materialLayers={materialLayers}
+          onMaterialLayersChange={onMaterialLayersChange}
+          materialLayersResult={materialLayersResult}
+          materialLayersQA={materialLayersQA}
+          polygonMode={polygonMode}
+          lastPolygonEditTime={lastPolygonEditTime}
+          skippedVolume={skippedVolume}
+          skippedContours={skippedContours}
         />
       </div>
     </div>

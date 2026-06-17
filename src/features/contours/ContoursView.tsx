@@ -18,6 +18,7 @@ interface ContoursViewProps {
   isProcessing: boolean;
   onGenerateContours: (interval: number, includeIndex: boolean, indexEvery: number) => void;
   onProceed: () => void;
+  onSkipContours?: () => void;
   
   // Parameter bindings
   contourInterval: number;
@@ -50,6 +51,7 @@ export function ContoursView({
   isProcessing,
   onGenerateContours,
   onProceed,
+  onSkipContours,
   contourInterval,
   setContourInterval,
   includeIndexContours,
@@ -357,10 +359,17 @@ export function ContoursView({
               : `Curvas trazadas: ${contours.lineCount} niveles, ${contours.segmentCount.toLocaleString()} segmentos en ${contours.processingTimeMs} ms.`}
           </span>
         </div>
-        <Button variant="primary" onClick={onProceed} disabled={!!contours.error || (contourQA ? contourQA.blockers.length > 0 : false)}>
-          Continuar a Exportación
-          <ArrowRight size={12} className="ml-1.5" />
-        </Button>
+        <div className="flex items-center gap-3">
+          {onSkipContours && (
+            <Button variant="secondary" onClick={onSkipContours}>
+              Omitir curvas
+            </Button>
+          )}
+          <Button variant="primary" onClick={onProceed} disabled={!!contours.error || (contourQA ? contourQA.blockers.length > 0 : false)}>
+            Continuar a Volumen
+            <ArrowRight size={12} className="ml-1.5" />
+          </Button>
+        </div>
       </div>
     </div>
   );

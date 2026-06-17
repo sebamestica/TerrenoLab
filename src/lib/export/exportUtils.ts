@@ -297,11 +297,27 @@ export function exportToGeoJSON(contours: ContourLine[]): string {
 export function downloadFile(content: string, filename: string, mimeType: string): void {
   if (typeof window === 'undefined') return;
 
+  if (!content || content.trim() === '') {
+    console.error('Exportación abortada: El contenido a exportar está vacío.');
+    return;
+  }
+
+  const safeFilename = sanitizeFilename(filename);
+  if (!safeFilename) {
+    console.error('Exportación abortada: Nombre de archivo inválido.');
+    return;
+  }
+
   const blob = new Blob([content], { type: mimeType });
+  if (blob.size === 0) {
+    console.error('Exportación abortada: El archivo generado tiene 0 bytes.');
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = filename;
+  link.download = safeFilename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

@@ -1,63 +1,42 @@
 import { TerrainPoint } from '../../domain/terrain/types';
 
-// Generate 50 points representing a realistic topography scan
-// sloped from southwest to northeast with a small ridge in the center
-export const SAMPLE_POINTS: TerrainPoint[] = [
-  { id: 'p1', x: 500120.5, y: 4500110.2, z: 124.52 },
-  { id: 'p2', x: 500150.2, y: 4500115.8, z: 125.10 },
-  { id: 'p3', x: 500195.8, y: 4500105.1, z: 126.85 },
-  { id: 'p4', x: 500220.1, y: 4500130.4, z: 127.34 },
-  { id: 'p5', x: 500250.7, y: 4500145.2, z: 129.20 },
-  { id: 'p6', x: 500290.4, y: 4500120.9, z: 130.65 },
-  { id: 'p7', x: 500330.6, y: 4500112.3, z: 132.88 },
-  { id: 'p8', x: 500380.2, y: 4500140.7, z: 135.12 },
-  { id: 'p9', x: 500410.9, y: 4500125.4, z: 136.40 },
-  { id: 'p10', x: 500450.3, y: 4500135.0, z: 138.95 },
-  
-  { id: 'p11', x: 500110.1, y: 4500180.5, z: 126.30 },
-  { id: 'p12', x: 500140.8, y: 4500190.1, z: 127.42 },
-  { id: 'p13', x: 500180.2, y: 4500175.4, z: 128.90 },
-  { id: 'p14', x: 500230.9, y: 4500195.7, z: 131.05 },
-  { id: 'p15', x: 500270.4, y: 4500185.0, z: 132.40 },
-  { id: 'p16', x: 500310.8, y: 4500200.2, z: 134.15 },
-  { id: 'p17', x: 500350.5, y: 4500180.9, z: 136.20 },
-  { id: 'p18', x: 500390.1, y: 4500210.3, z: 138.45 },
-  { id: 'p19', x: 500435.6, y: 4500195.8, z: 140.70 },
-  { id: 'p20', x: 500475.2, y: 4500215.1, z: 142.10 },
-  
-  { id: 'p21', x: 500130.4, y: 4500250.2, z: 128.50 },
-  { id: 'p22', x: 500170.9, y: 4500265.8, z: 130.12 },
-  { id: 'p23', x: 500210.1, y: 4500245.3, z: 132.25 },
-  { id: 'p24', x: 500245.5, y: 4500270.9, z: 134.80 },
-  { id: 'p25', x: 500295.2, y: 4500255.4, z: 136.35 },
-  { id: 'p26', x: 500325.8, y: 4500280.1, z: 138.10 },
-  { id: 'p27', x: 500365.1, y: 4500260.7, z: 140.50 },
-  { id: 'p28', x: 500405.3, y: 4500290.4, z: 142.90 },
-  { id: 'p29', x: 500445.8, y: 4500275.2, z: 144.35 },
-  { id: 'p30', x: 500485.9, y: 4500285.9, z: 145.80 },
-  
-  { id: 'p31', x: 500115.7, y: 4500320.4, z: 131.20 },
-  { id: 'p32', x: 500155.2, y: 4500335.1, z: 132.90 },
-  { id: 'p33', x: 500190.8, y: 4500310.8, z: 134.70 },
-  { id: 'p34', x: 500225.1, y: 4500340.2, z: 137.55 },
-  { id: 'p35', x: 500275.9, y: 4500325.9, z: 139.10 },
-  { id: 'p36', x: 500315.4, y: 4500350.5, z: 141.45 },
-  { id: 'p37', x: 500355.7, y: 4500330.1, z: 143.80 },
-  { id: 'p38', x: 500400.2, y: 4500360.7, z: 146.10 },
-  { id: 'p39', x: 500430.8, y: 4500345.2, z: 147.25 },
-  { id: 'p40', x: 500480.1, y: 4500355.0, z: 148.90 },
-  
-  { id: 'p41', x: 500125.9, y: 4500410.8, z: 133.40 },
-  { id: 'p42', x: 500160.3, y: 4500425.2, z: 135.20 },
-  { id: 'p43', x: 500205.1, y: 4500395.7, z: 137.85 },
-  { id: 'p44', x: 500235.8, y: 4500430.4, z: 140.60 },
-  { id: 'p45', x: 500280.2, y: 4500415.9, z: 142.45 },
-  { id: 'p46', x: 500320.9, y: 4500445.1, z: 145.20 },
-  { id: 'p47', x: 500360.4, y: 4500420.3, z: 147.60 },
-  { id: 'p48', x: 500415.2, y: 4500450.9, z: 149.85 },
-  { id: 'p49', x: 500440.7, y: 4500435.8, z: 151.30 },
-  { id: 'p50', x: 500490.5, y: 4500440.1, z: 152.75 },
-];
+// Generate 500 points representing a realistic topography
+// 25x20 grid from 0 to 240 and 0 to 190.
+function createHillDataset(): TerrainPoint[] {
+  const points: TerrainPoint[] = [];
+  let idCounter = 1;
+  for (let x = 0; x <= 240; x += 10) {
+    for (let y = 0; y <= 190; y += 10) {
+      // Distance from center (120, 95)
+      const distSq = Math.pow(x - 120, 2) + Math.pow(y - 95, 2);
+      
+      // Base elevation of 1500 meters to avoid the [0, 255] hillshade trap
+      // Add a hill of up to 45 meters, plus some perlin-like trig noise
+      const hillHeight = Math.max(0, 45 - Math.sqrt(distSq) * 0.4);
+      const undulatingNoise = Math.sin(x * 0.05) * Math.cos(y * 0.05) * 5;
+      
+      // Add a small random floating point noise (between -0.5 and 0.5) to avoid integers
+      // This prevents the QA engine from thinking it's a quantized raster image
+      const randomNoise = (Math.random() - 0.5); 
+      
+      const z = 1500 + hillHeight + undulatingNoise + randomNoise;
+      
+      // Introduce a slight positional noise to X and Y to make it feel like a real survey
+      const xNoise = (Math.random() - 0.5) * 2;
+      const yNoise = (Math.random() - 0.5) * 2;
+      
+      points.push({
+        id: `p${idCounter++}`,
+        x: parseFloat((x + xNoise).toFixed(3)),
+        y: parseFloat((y + yNoise).toFixed(3)),
+        z: parseFloat(z.toFixed(3))
+      });
+    }
+  }
+  return points;
+}
+
+export const SAMPLE_POINTS: TerrainPoint[] = createHillDataset();
 
 /**
  * Serializes points to a standard CSV string format.

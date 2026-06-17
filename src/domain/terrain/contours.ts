@@ -1,4 +1,5 @@
 import { IDWSurfaceResult } from './interpolation';
+import { TERRAIN_LIMITS } from '../../config/limits';
 
 export interface ContourOptions {
   interval: number;
@@ -51,7 +52,7 @@ export function generateContours(
   }
 
   // 2. Validate thresholds
-  if (levels.length > 300) {
+  if (levels.length > TERRAIN_LIMITS.maxContourLevels) {
     return {
       interval,
       levels,

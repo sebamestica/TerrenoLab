@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { RefreshCw } from 'lucide-react';
 import { WorkflowState } from '../../domain/workflow/workflowTypes';
 import { TerrainDataset } from '../../domain/terrain/types';
@@ -45,11 +46,25 @@ export function Topbar({
 
   return (
     <header className="h-14 border-b border-[#E2E8F0] bg-white px-4 flex items-center justify-between select-none">
-      {/* Brand & Project */}
       <div className="flex items-center gap-4">
-        <span className="font-sans font-bold text-base tracking-wider text-[#0F172A]">
-          TerrenoLab
-        </span>
+        <div className="flex items-center gap-3">
+          <img src="/terrenolab-icon.svg" alt="TerrenoLab" className="w-7 h-7" />
+          <div className="flex flex-col">
+            <span className="font-sans font-bold text-[14px] leading-tight text-[#0F172A]">
+              TerrenoLab MVP
+            </span>
+            <span className="text-[9.5px] font-medium leading-none text-[#64748B]">
+              Versión Alpha técnica
+            </span>
+          </div>
+        </div>
+        <Link 
+          href="/guia"
+          target="_blank"
+          className="text-xs font-semibold text-[#0891B2] hover:text-[#06B6D4] transition-colors font-sans px-2.5 py-1 bg-cyan-50 rounded border border-cyan-100/50"
+        >
+          Guía rápida
+        </Link>
         {dataset && (
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded font-mono text-[12px] text-[#64748B]">
             <span>Proyecto:</span>
