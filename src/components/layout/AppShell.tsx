@@ -167,7 +167,7 @@ export function AppShell({
         />
 
         {/* Center: Main Working Canvas & Form Views */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#FFFFFF] relative">
+        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#FFFFFF] relative">
           {/* Global Layers Bar */}
           {currentState !== 'EMPTY' && currentState !== 'FILE_SELECTED' && currentState !== 'VALIDATED' && currentState !== 'ERROR' && (
             <div className="h-11 border-b border-[#E2E8F0] bg-white px-4 flex items-center justify-between shrink-0 select-none z-10 global-layers-bar font-sans">

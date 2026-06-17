@@ -602,7 +602,7 @@ export function ExportView({
     (exportGeoJSON && !isGeoJSONValid);
 
   return (
-    <div className="flex-1 flex flex-col p-6 space-y-6 max-w-xl mx-auto w-full select-none bg-white font-sans">
+    <div className="flex-1 overflow-y-auto flex flex-col p-6 space-y-6 max-w-xl mx-auto w-full select-none bg-white font-sans">
       {/* Offscreen rendering box */}
       <div 
         ref={hiddenContainerRef}
